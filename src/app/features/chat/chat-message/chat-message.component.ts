@@ -1,0 +1,121 @@
+import { Component, input } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { ChatMessage } from '../../../core/models/chat.model';
+
+@Component({
+  selector: 'app-chat-message',
+  standalone: true,
+  imports: [CommonModule],
+  template: `
+    <div class="message-row" [class.user]="message().role === 'user'" [class.assistant]="message().role === 'assistant'">
+      @if (message().role === 'assistant') {
+        <div class="bot-avatar">
+          <svg viewBox="0 0 32 32" width="20" height="20" fill="none">
+            <defs>
+              <linearGradient id="msgLogoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#34d399"/>
+                <stop offset="100%" stop-color="#059669"/>
+              </linearGradient>
+            </defs>
+            <circle cx="16" cy="16" r="14" stroke="url(#msgLogoGrad)" stroke-width="2" fill="none"/>
+            <path d="M10 20 L14 12 L18 17 L22 10" stroke="url(#msgLogoGrad)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+          </svg>
+        </div>
+      }
+      <div class="message-bubble" [class.typing]="message().isTyping">
+        @if (message().isTyping) {
+          <div class="typing-dots">
+            <span class="dot"></span>
+            <span class="dot"></span>
+            <span class="dot"></span>
+          </div>
+        } @else {
+          <p class="message-text">{{ message().content }}</p>
+        }
+      </div>
+    </div>
+  `,
+  styles: [`
+    .message-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      max-width: 85%;
+      animation: fadeInUp 300ms ease;
+
+      &.user {
+        margin-left: auto;
+        flex-direction: row-reverse;
+      }
+
+      &.assistant {
+        margin-right: auto;
+      }
+    }
+
+    .bot-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.15);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-top: 4px;
+    }
+
+    .message-bubble {
+      padding: 14px 18px;
+      border-radius: var(--radius-lg);
+      line-height: 1.6;
+      font-size: 0.9rem;
+
+      .user & {
+        background: linear-gradient(135deg, var(--emerald-600), var(--emerald-700));
+        color: var(--emerald-50);
+        border-bottom-right-radius: 4px;
+        box-shadow: 0 2px 12px rgba(16, 185, 129, 0.2);
+      }
+
+      .assistant & {
+        background: var(--surface-elevated);
+        color: var(--text-primary);
+        border: 1px solid var(--surface-border-subtle);
+        border-bottom-left-radius: 4px;
+      }
+
+      &.typing {
+        padding: 18px 24px;
+      }
+    }
+
+    .message-text {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .typing-dots {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      height: 16px;
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      background: var(--emerald-400);
+      border-radius: 50%;
+      animation: typingDot 1.4s ease-in-out infinite;
+
+      &:nth-child(2) { animation-delay: 0.2s; }
+      &:nth-child(3) { animation-delay: 0.4s; }
+    }
+  `],
+})
+export class ChatMessageComponent {
+  readonly message = input.required<ChatMessage>();
+}
