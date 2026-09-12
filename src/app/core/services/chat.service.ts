@@ -1,10 +1,19 @@
-import { Injectable, signal, computed } from '@angular/core';
+import { Injectable, signal, computed, inject } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
 import { ChatMessage, Conversation, SuggestionChip } from '../models/chat.model';
 
 export type DesktopViewMode = 'home' | 'chat';
 
+export interface ChatResponse {
+  response: string;
+  agent?: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ChatService {
+  private readonly http = inject(HttpClient);
+  private readonly apiUrl = '/chat';
+
   /** Active desktop display mode: 'home' or 'chat' */
   readonly currentView = signal<DesktopViewMode>('home');
 
@@ -24,7 +33,7 @@ export class ChatService {
   readonly isTyping = signal<boolean>(false);
   readonly hasMessages = computed(() => this.messages().length > 0);
 
-  /** Awaiting backend response flag - UI only, ready for API */
+  /** Awaiting backend response flag */
   readonly isAwaitingBackend = signal<boolean>(false);
 
   setView(view: DesktopViewMode): void {
@@ -57,10 +66,6 @@ export class ChatService {
     this.isAwaitingBackend.set(false);
   }
 
-  /**
-   * UI ONLY: Appends user message and sets backend waiting status
-   * Responses will come from backend API!
-   */
   sendUserMessage(text: string): void {
     if (!text.trim()) return;
 
@@ -73,8 +78,29 @@ export class ChatService {
 
     this.messages.update((msgs) => [...msgs, userMsg]);
     this.currentView.set('chat');
-
-    // UI state indicator: awaiting backend API
     this.isAwaitingBackend.set(true);
+
+    this.http
+      .post<ChatResponse>(this.apiUrl, {
+        message: userMsg.content,
+      })
+      .subscribe({
+        next: (data) => {
+          const assistantMsg: ChatMessage = {
+            id: `msg-${Date.now()}`,
+            role: 'assistant',
+            content: data.response,
+            agent: data.agent,
+            timestamp: new Date(),
+          };
+          this.messages.update((msgs) => [...msgs, assistantMsg]);
+          this.isAwaitingBackend.set(false);
+        },
+        error: (err) => {
+          console.error('Failed to communicate with backend:', err);
+          this.isAwaitingBackend.set(false);
+        },
+      });
   }
 }
+
