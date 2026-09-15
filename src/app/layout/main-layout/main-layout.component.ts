@@ -1,17 +1,21 @@
 import { Component } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { TopbarComponent } from '../topbar/topbar.component';
+import { SidebarComponent } from '../sidebar/sidebar.component';
 
 @Component({
   selector: 'app-main-layout',
   standalone: true,
-  imports: [RouterOutlet, TopbarComponent],
+  imports: [RouterOutlet, TopbarComponent, SidebarComponent],
   template: `
     <div class="desktop-shell">
       <app-topbar />
-      <main class="desktop-content">
-        <router-outlet />
-      </main>
+      <div class="layout-body">
+        <app-sidebar />
+        <main class="desktop-content">
+          <router-outlet />
+        </main>
+      </div>
     </div>
   `,
   styles: [`
@@ -25,9 +29,16 @@ import { TopbarComponent } from '../topbar/topbar.component';
       position: relative;
     }
 
-    .desktop-content {
+    .layout-body {
+      display: flex;
       flex: 1;
       height: calc(100vh - 60px);
+      overflow: hidden;
+    }
+
+    .desktop-content {
+      flex: 1;
+      height: 100%;
       overflow-y: auto;
       overflow-x: hidden;
       position: relative;

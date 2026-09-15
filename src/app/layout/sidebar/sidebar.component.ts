@@ -55,7 +55,7 @@ import { ChatService } from '../../core/services/chat.service';
       <!-- Conversations List -->
       @if (!isCollapsed()) {
         <div class="sidebar-section conversations">
-          <div class="section-label">Recent</div>
+          <div class="section-label">Chat History</div>
           <div class="conv-list">
             @for (conv of chatService.conversations(); track conv.id) {
               <button
@@ -73,17 +73,6 @@ import { ChatService } from '../../core/services/chat.service';
         </div>
       }
 
-      <!-- Nav Links -->
-      <div class="sidebar-nav">
-        @for (item of navItems; track item.label) {
-          <button class="nav-item" [class.active]="item.active">
-            <span class="nav-icon" [innerHTML]="item.icon"></span>
-            @if (!isCollapsed()) {
-              <span class="nav-label">{{ item.label }}</span>
-            }
-          </button>
-        }
-      </div>
     </aside>
   `,
   styles: [`
@@ -300,28 +289,6 @@ export class SidebarComponent {
   readonly chatService = inject(ChatService);
   readonly isCollapsed = signal(false);
 
-  readonly navItems = [
-    {
-      label: 'Markets',
-      icon: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>',
-      active: false,
-    },
-    {
-      label: 'Portfolio',
-      icon: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"></path></svg>',
-      active: false,
-    },
-    {
-      label: 'Watchlist',
-      icon: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>',
-      active: false,
-    },
-    {
-      label: 'Settings',
-      icon: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"></path></svg>',
-      active: false,
-    },
-  ];
 
   toggleCollapse(): void {
     this.isCollapsed.update((v) => !v);
