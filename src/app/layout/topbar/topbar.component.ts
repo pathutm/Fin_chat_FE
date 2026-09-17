@@ -2,6 +2,7 @@ import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ChatService } from '../../core/services/chat.service';
 import { ThemeService } from '../../core/services/theme.service';
+import { AuthService } from '../../core/services/auth.service';
 import { SNS_SQUARE_LOGO } from '../../core/constants/assets';
 
 @Component({
@@ -85,10 +86,27 @@ import { SNS_SQUARE_LOGO } from '../../core/constants/assets';
           <span>{{ chatService.selectedModel() }}</span>
         </div>
 
-        <!-- Attached Organization Logo (SNS Square) in place of User Profile -->
+        <!-- Attached Organization Logo (SNS Square) -->
         <div class="org-logo-pill" title="SNS Square - Redesigning Business">
           <img [src]="logoUrl" alt="SNS Square Logo" class="org-logo-img" />
         </div>
+
+        <!-- User Profile Area -->
+        @if (authService.currentUser()) {
+          <div class="user-profile-area">
+            <div class="user-info">
+              <span class="user-name">{{ authService.displayName() || authService.currentUser()?.displayName || 'User' }}</span>
+            </div>
+            <img [src]="authService.currentUser()?.photoURL || 'assets/default-avatar.png'" alt="User Profile" class="user-avatar" />
+            <button class="logout-btn" (click)="authService.logout()" title="Logout">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+              </svg>
+            </button>
+          </div>
+        }
       </div>
     </header>
   `,
@@ -255,8 +273,60 @@ import { SNS_SQUARE_LOGO } from '../../core/constants/assets';
       display: block;
     }
 
+    /* ── User Profile Area ── */
+    .user-profile-area {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding-left: 12px;
+      margin-left: 4px;
+      border-left: 1px solid var(--topbar-border);
+    }
+
+    .user-info {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+    }
+
+    .user-name {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--headline-color);
+    }
+
+
+    .user-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 1px solid var(--topbar-border);
+      background-color: var(--pill-bg);
+    }
+
+    .logout-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .logout-btn:hover {
+      background: rgba(239, 68, 68, 0.1);
+      color: #ef4444;
+      border-color: rgba(239, 68, 68, 0.2);
+    }
+
     @media (max-width: 900px) {
-      .brand-badge {
+      .brand-badge, .user-info {
         display: none;
       }
     }
@@ -265,5 +335,6 @@ import { SNS_SQUARE_LOGO } from '../../core/constants/assets';
 export class TopbarComponent {
   readonly chatService = inject(ChatService);
   readonly themeService = inject(ThemeService);
+  readonly authService = inject(AuthService);
   readonly logoUrl = SNS_SQUARE_LOGO;
 }

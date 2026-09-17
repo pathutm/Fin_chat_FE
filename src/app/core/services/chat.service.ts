@@ -1,12 +1,15 @@
 import { Injectable, signal, computed, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { ChatMessage, Conversation, SuggestionChip } from '../models/chat.model';
+import { AuthService } from './auth.service';
 
 export type DesktopViewMode = 'home' | 'chat';
 
 export interface ChatRequest {
   message: string;
   conversation_id: string;
+  user_name?: string | null;
+  user_id?: string | null;
 }
 
 export interface ChatResponse {
@@ -14,9 +17,9 @@ export interface ChatResponse {
   agent?: string;
 }
 
-/** localStorage key for persisted chat history */
-const STORAGE_KEY = 'finance_ai_chat_history';
-const ACTIVE_KEY = 'finance_ai_active_conv';
+// Base keys, will be appended with user ID
+const BASE_STORAGE_KEY = 'finance_ai_chat_history';
+const BASE_ACTIVE_KEY = 'finance_ai_active_conv';
 
 /** Serialisable form stored in localStorage (timestamps as ISO strings) */
 interface StoredMessage {
@@ -38,8 +41,19 @@ interface StoredConversation {
 @Injectable({ providedIn: 'root' })
 export class ChatService {
   private readonly http = inject(HttpClient);
+  private readonly authService = inject(AuthService);
   private readonly apiUrl: string = 'http://127.0.0.1:8000/chat';
   private readonly proxyUrl: string = '/chat';
+
+  private get storageKey(): string {
+    const userId = this.authService.currentUser()?.id || 'anonymous';
+    return `${BASE_STORAGE_KEY}_${userId}`;
+  }
+
+  private get activeKey(): string {
+    const userId = this.authService.currentUser()?.id || 'anonymous';
+    return `${BASE_ACTIVE_KEY}_${userId}`;
+  }
 
   /** Active desktop display mode: 'home' or 'chat' */
   readonly currentView = signal<DesktopViewMode>('home');
@@ -83,7 +97,7 @@ export class ChatService {
 
   private loadStoredConversations(): StoredConversation[] {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = localStorage.getItem(this.storageKey);
       if (!raw) return [];
       const parsed = JSON.parse(raw);
       return Array.isArray(parsed) ? parsed : [];
@@ -94,7 +108,7 @@ export class ChatService {
 
   private saveStoredConversations(stored: StoredConversation[]): void {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+      localStorage.setItem(this.storageKey, JSON.stringify(stored));
     } catch {
       console.warn('Failed to save chat history to localStorage.');
     }
@@ -184,7 +198,7 @@ export class ChatService {
     this.conversations.set(stored.map((sc) => this.toConversation(sc)));
 
     // Restore the last active conversation
-    const lastActiveId = localStorage.getItem(ACTIVE_KEY);
+    const lastActiveId = localStorage.getItem(this.activeKey);
     const target = (lastActiveId ? stored.find((c) => c.id === lastActiveId) : null) ?? stored[0];
 
     this.activeConversationId.set(target.id);
@@ -216,7 +230,7 @@ export class ChatService {
     this.isTyping.set(false);
     this.currentView.set('chat');
 
-    try { localStorage.setItem(ACTIVE_KEY, id); } catch { /* ignore */ }
+    try { localStorage.setItem(this.activeKey, id); } catch { /* ignore */ }
   }
 
   startNewConversation(initialText?: string): void {
@@ -226,7 +240,7 @@ export class ChatService {
     this.isTyping.set(false);
     this.activeConversationId.set(newId);
 
-    try { localStorage.setItem(ACTIVE_KEY, newId); } catch { /* ignore */ }
+    try { localStorage.setItem(this.activeKey, newId); } catch { /* ignore */ }
 
     if (initialText) {
       this.sendUserMessage(initialText);
@@ -256,7 +270,7 @@ export class ChatService {
     this.isTyping.set(false);
     this.activeConversationId.set(newId);
 
-    try { localStorage.setItem(ACTIVE_KEY, newId); } catch { /* ignore */ }
+    try { localStorage.setItem(this.activeKey, newId); } catch { /* ignore */ }
   }
 
   sendUserMessage(text: string): void {
@@ -282,11 +296,13 @@ export class ChatService {
 
     // Persist after user message
     this.persistCurrentConversation();
-    try { localStorage.setItem(ACTIVE_KEY, convId); } catch { /* ignore */ }
+    try { localStorage.setItem(this.activeKey, convId); } catch { /* ignore */ }
 
     const payload: ChatRequest = {
       message: userMsg.content,
       conversation_id: convId,
+      user_name: this.authService.displayName() || null,
+      user_id: this.authService.currentUser()?.id || null,
     };
 
     const handleSuccess = (data: ChatResponse) => {
