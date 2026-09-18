@@ -6,11 +6,8 @@ import { Component, input, output } from '@angular/core';
   template: `
     <button class="chip-card" (click)="clicked.emit()">
       <div class="chip-icon">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none">
-          <path d="M12 2L14.09 8.26L20 9.27L15.55 13.97L16.91 20.02L12 17.27L7.09 20.02L8.45 13.97L4 9.27L9.91 8.26L12 2Z"
-                fill="var(--emerald-400)" opacity="0.8"/>
-          <path d="M12 2L14.09 8.26L20 9.27L15.55 13.97L16.91 20.02L12 17.27L7.09 20.02L8.45 13.97L4 9.27L9.91 8.26L12 2Z"
-                stroke="var(--emerald-300)" stroke-width="0.5" fill="none"/>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M7 17l9.2-9.2M17 17V7H7"/>
         </svg>
       </div>
       <span class="chip-title">{{ title() }}</span>
@@ -20,45 +17,39 @@ import { Component, input, output } from '@angular/core';
     .chip-card {
       display: flex;
       align-items: center;
-      gap: 10px;
-      padding: 14px 18px;
-      border-radius: var(--radius-md);
-      background: rgba(16, 185, 129, 0.06);
-      border: 1px solid rgba(16, 185, 129, 0.12);
-      backdrop-filter: blur(12px);
-      color: var(--text-primary);
+      gap: 8px;
+      padding: 8px 14px;
+      border-radius: var(--radius-base);
+      background: var(--card-surface);
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
       cursor: pointer;
-      transition: all var(--transition-fast);
+      transition: all 0.15s ease;
       white-space: nowrap;
-      min-width: 180px;
 
       &:hover {
-        background: rgba(16, 185, 129, 0.12);
-        border-color: rgba(16, 185, 129, 0.3);
-        box-shadow: var(--glow-sm);
-        transform: translateY(-2px);
-      }
+        background: var(--secondary-surface);
+        border-color: oklch(0.8 0.015 260);
+        color: var(--foreground);
 
-      &:active {
-        transform: translateY(0);
+        .chip-icon {
+          color: var(--primary-accent);
+        }
       }
     }
 
     .chip-icon {
-      width: 28px;
-      height: 28px;
-      border-radius: var(--radius-sm);
-      background: rgba(16, 185, 129, 0.1);
+      color: var(--muted-text);
       display: flex;
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
+      transition: color 0.15s ease;
     }
 
     .chip-title {
-      font-size: 0.85rem;
+      font-size: 0.82rem;
       font-weight: 500;
-      color: var(--text-secondary);
     }
   `],
 })

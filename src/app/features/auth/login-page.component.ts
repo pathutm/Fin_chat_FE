@@ -13,18 +13,19 @@ import { AuthService } from '../../core/services/auth.service';
       <div class="login-card">
         <!-- Brand Header -->
         <div class="brand-group">
-          <div class="gem-logo">
-            <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
-              <path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2 12L9.6 9.6L12 2Z" />
+          <div class="brand-icon-box">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2">
+              <path d="M3 3v18h18" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M18 9l-5 5-4-4-3 3" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </div>
           <div class="brand-text">
-            <span class="brand-name">FinAI</span>
+            <span class="brand-name">CFO Conversational Analytics</span>
           </div>
         </div>
 
-        <h1 class="login-title">Welcome to FinAI</h1>
-        <p class="login-subtitle">Your intelligent financial assistant</p>
+        <h1 class="login-title">Sign in to your account</h1>
+        <p class="login-subtitle">Enterprise Working Capital Intelligence Platform</p>
 
         <!-- Error & Success Banners -->
         @if (errorMessage()) {
@@ -50,7 +51,7 @@ import { AuthService } from '../../core/services/auth.service';
 
         <!-- Google OAuth Button -->
         <button type="button" class="google-login-btn" (click)="onGoogleLogin()" [disabled]="isSubmitting()">
-          <svg class="google-icon" viewBox="0 0 24 24" width="20" height="20" xmlns="http://www.w3.org/2000/svg">
+          <svg class="google-icon" viewBox="0 0 24 24" width="18" height="18" xmlns="http://www.w3.org/2000/svg">
             <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
             <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
             <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
@@ -62,20 +63,20 @@ import { AuthService } from '../../core/services/auth.service';
         <!-- Divider -->
         <div class="divider">
           <span class="divider-line"></span>
-          <span class="divider-text">OR</span>
+          <span class="divider-text">OR EMAIL</span>
           <span class="divider-line"></span>
         </div>
 
         <!-- Email/Password Form -->
         <form (ngSubmit)="onEmailSignIn()" class="login-form">
           <div class="form-group">
-            <label for="email-input">Email</label>
+            <label for="email-input">Email address</label>
             <input
               id="email-input"
               type="email"
               [(ngModel)]="email"
               name="email"
-              placeholder="Enter your email"
+              placeholder="name@company.com"
               required
               autocomplete="email"
             />
@@ -89,7 +90,7 @@ import { AuthService } from '../../core/services/auth.service';
                 [type]="showPassword() ? 'text' : 'password'"
                 [(ngModel)]="password"
                 name="password"
-                placeholder="Enter your password"
+                placeholder="Enter password"
                 required
                 autocomplete="current-password"
               />
@@ -100,14 +101,12 @@ import { AuthService } from '../../core/services/auth.service';
                 [attr.aria-label]="showPassword() ? 'Hide password' : 'Show password'"
               >
                 @if (showPassword()) {
-                  <!-- Eye Off Icon -->
-                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
                     <line x1="1" y1="1" x2="23" y2="23" />
                   </svg>
                 } @else {
-                  <!-- Eye Icon -->
-                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
                     <circle cx="12" cy="12" r="3" />
                   </svg>
@@ -122,9 +121,9 @@ import { AuthService } from '../../core/services/auth.service';
 
           <button type="submit" class="submit-btn" [disabled]="isSubmitting()">
             @if (isSubmitting()) {
-              <span>Signing In…</span>
+              <span>Signing in…</span>
             } @else {
-              <span>Sign In</span>
+              <span>Sign in</span>
             }
           </button>
         </form>
@@ -144,24 +143,22 @@ import { AuthService } from '../../core/services/auth.service';
       justify-content: center;
       min-height: 100vh;
       width: 100vw;
-      background: var(--bg-app, #090d16);
-      font-family: inherit;
-      padding: 20px;
+      background: var(--bg-app);
+      padding: 24px;
       box-sizing: border-box;
     }
 
     .login-card {
-      background: var(--topbar-bg, rgba(22, 30, 46, 0.85));
-      border: 1px solid var(--topbar-border, rgba(255, 255, 255, 0.1));
-      backdrop-filter: blur(24px);
-      border-radius: 20px;
-      padding: 40px 36px;
+      background: var(--card-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-card);
+      padding: 36px 32px;
       width: 100%;
-      max-width: 420px;
+      max-width: 400px;
       display: flex;
       flex-direction: column;
       align-items: center;
-      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
       box-sizing: border-box;
     }
 
@@ -169,40 +166,41 @@ import { AuthService } from '../../core/services/auth.service';
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 12px;
+      gap: 10px;
       margin-bottom: 20px;
     }
 
-    .gem-logo {
-      width: 44px;
-      height: 44px;
-      border-radius: 12px;
-      background: radial-gradient(circle at 35% 30%, #34d399, #059669);
-      box-shadow: 0 0 24px rgba(16, 185, 129, 0.45);
+    .brand-icon-box {
+      width: 32px;
+      height: 32px;
+      border-radius: var(--radius-base);
+      background: var(--primary-accent);
+      color: #ffffff;
       display: flex;
       align-items: center;
       justify-content: center;
-      color: #022c22;
+      flex-shrink: 0;
     }
 
     .brand-name {
-      font-size: 1.75rem;
+      font-size: 0.96rem;
       font-weight: 700;
-      color: var(--headline-color, #ffffff);
-      letter-spacing: -0.02em;
+      color: var(--foreground);
+      letter-spacing: -0.01em;
     }
 
     .login-title {
-      font-size: 1.4rem;
-      font-weight: 600;
-      color: var(--headline-color, #ffffff);
-      margin: 0 0 6px 0;
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--foreground);
+      margin: 0 0 4px 0;
       text-align: center;
+      letter-spacing: -0.01em;
     }
 
     .login-subtitle {
-      font-size: 0.88rem;
-      color: var(--text-secondary, #94a3b8);
+      font-size: 0.84rem;
+      color: var(--muted-text);
       margin: 0 0 20px 0;
       text-align: center;
     }
@@ -210,55 +208,54 @@ import { AuthService } from '../../core/services/auth.service';
     /* ── Banners ── */
     .alert {
       width: 100%;
-      padding: 10px 14px;
-      border-radius: 8px;
-      font-size: 0.84rem;
+      padding: 9px 12px;
+      border-radius: var(--radius-base);
+      font-size: 0.82rem;
       display: flex;
       align-items: center;
       gap: 8px;
-      margin-bottom: 20px;
+      margin-bottom: 16px;
       box-sizing: border-box;
     }
 
     .alert-error {
-      background: rgba(239, 68, 68, 0.15);
-      border: 1px solid rgba(239, 68, 68, 0.3);
-      color: #fca5a5;
+      background: oklch(0.55 0.22 25 / 0.1);
+      border: 1px solid oklch(0.55 0.22 25 / 0.25);
+      color: var(--color-destructive);
     }
 
     .alert-success {
-      background: rgba(16, 185, 129, 0.15);
-      border: 1px solid rgba(16, 185, 129, 0.3);
-      color: #6ee7b7;
+      background: oklch(0.55 0.14 155 / 0.1);
+      border: 1px solid oklch(0.55 0.14 155 / 0.25);
+      color: var(--color-success);
     }
 
     .google-login-btn {
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 12px;
+      gap: 10px;
       width: 100%;
-      padding: 12px 20px;
-      background: #ffffff;
-      color: #1f2937;
-      border: 1px solid #e5e7eb;
-      border-radius: 10px;
-      font-size: 0.95rem;
+      padding: 10px 16px;
+      background: var(--card-surface);
+      color: var(--foreground);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-base);
+      font-size: 0.88rem;
       font-weight: 600;
       cursor: pointer;
-      transition: all 0.2s ease;
+      transition: all 0.15s ease;
       box-sizing: border-box;
-    }
 
-    .google-login-btn:hover:not(:disabled) {
-      background: #f9fafb;
-      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
-      transform: translateY(-1px);
-    }
+      &:hover:not(:disabled) {
+        background: var(--secondary-surface);
+        border-color: oklch(0.8 0.015 260);
+      }
 
-    .google-login-btn:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
+      &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
     }
 
     .google-icon {
@@ -270,20 +267,20 @@ import { AuthService } from '../../core/services/auth.service';
       display: flex;
       align-items: center;
       width: 100%;
-      margin: 22px 0;
+      margin: 18px 0;
     }
 
     .divider-line {
       flex: 1;
       height: 1px;
-      background: var(--topbar-border, rgba(255, 255, 255, 0.12));
+      background: var(--border-color);
     }
 
     .divider-text {
-      padding: 0 14px;
-      font-size: 0.75rem;
+      padding: 0 10px;
+      font-size: 0.72rem;
       font-weight: 600;
-      color: var(--text-secondary, #64748b);
+      color: var(--muted-text);
       letter-spacing: 0.05em;
     }
 
@@ -292,38 +289,38 @@ import { AuthService } from '../../core/services/auth.service';
       width: 100%;
       display: flex;
       flex-direction: column;
-      gap: 18px;
+      gap: 14px;
     }
 
     .form-group {
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: 4px;
       text-align: left;
     }
 
     .form-group label {
-      font-size: 0.82rem;
+      font-size: 0.8rem;
       font-weight: 600;
-      color: var(--headline-color, #e2e8f0);
+      color: var(--foreground);
     }
 
     .form-group input {
       width: 100%;
-      padding: 11px 14px;
-      background: rgba(15, 23, 42, 0.6);
-      border: 1px solid var(--topbar-border, rgba(255, 255, 255, 0.12));
-      border-radius: 10px;
-      color: var(--headline-color, #ffffff);
-      font-size: 0.92rem;
+      padding: 9px 12px;
+      background: var(--card-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-base);
+      color: var(--foreground);
+      font-size: 0.9rem;
       outline: none;
-      transition: all 0.2s ease;
+      transition: border-color 0.15s ease;
       box-sizing: border-box;
-    }
 
-    .form-group input:focus {
-      border-color: #10b981;
-      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+      &:focus {
+        border-color: var(--primary-accent);
+        box-shadow: 0 0 0 2px oklch(0.32 0.11 265 / 0.15);
+      }
     }
 
     .password-wrapper {
@@ -334,94 +331,90 @@ import { AuthService } from '../../core/services/auth.service';
     }
 
     .password-wrapper input {
-      padding-right: 42px;
+      padding-right: 36px;
     }
 
     .toggle-password-btn {
       position: absolute;
-      right: 10px;
+      right: 8px;
       background: transparent;
       border: none;
-      color: var(--text-secondary, #94a3b8);
+      color: var(--muted-text);
       cursor: pointer;
-      padding: 6px;
+      padding: 4px;
       display: flex;
       align-items: center;
       justify-content: center;
-      border-radius: 6px;
-      transition: color 0.2s ease;
-    }
+      border-radius: 4px;
 
-    .toggle-password-btn:hover {
-      color: var(--headline-color, #ffffff);
+      &:hover {
+        color: var(--foreground);
+      }
     }
 
     .forgot-password-container {
       display: flex;
       justify-content: flex-end;
-      margin-top: -6px;
+      margin-top: -4px;
     }
 
     .submit-btn {
       width: 100%;
-      padding: 12px;
-      background: linear-gradient(135deg, #10b981, #059669);
+      padding: 10px;
+      background: var(--primary-accent);
       color: #ffffff;
       border: none;
-      border-radius: 10px;
-      font-size: 0.95rem;
+      border-radius: var(--radius-base);
+      font-size: 0.9rem;
       font-weight: 600;
       cursor: pointer;
-      transition: all 0.2s ease;
-      box-shadow: 0 4px 14px rgba(16, 185, 129, 0.3);
+      transition: all 0.15s ease;
       margin-top: 4px;
-    }
 
-    .submit-btn:hover:not(:disabled) {
-      background: linear-gradient(135deg, #34d399, #10b981);
-      transform: translateY(-1px);
-      box-shadow: 0 6px 18px rgba(16, 185, 129, 0.4);
-    }
+      &:hover:not(:disabled) {
+        opacity: 0.92;
+      }
 
-    .submit-btn:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
+      &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
     }
 
     .link-btn {
       background: transparent;
       border: none;
-      color: var(--text-secondary, #94a3b8);
-      font-size: 0.82rem;
+      color: var(--muted-text);
+      font-size: 0.8rem;
       cursor: pointer;
       padding: 0;
-      transition: color 0.2s ease;
-    }
+      transition: color 0.15s ease;
 
-    .link-btn:hover:not(:disabled) {
-      color: var(--headline-color, #ffffff);
-      text-decoration: underline;
-    }
+      &:hover:not(:disabled) {
+        color: var(--foreground);
+        text-decoration: underline;
+      }
 
-    .link-btn:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
+      &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
 
-    .link-btn.highlight {
-      color: #10b981;
-      font-weight: 600;
-      margin-left: 6px;
-    }
+      &.highlight {
+        color: var(--primary-accent);
+        font-weight: 600;
+        margin-left: 4px;
 
-    .link-btn.highlight:hover:not(:disabled) {
-      color: #34d399;
+        &:hover:not(:disabled) {
+          text-decoration: underline;
+        }
+      }
     }
 
     .signup-prompt {
-      margin-top: 24px;
-      font-size: 0.85rem;
-      color: var(--text-secondary, #94a3b8);
+      margin-top: 20px;
+      font-size: 0.82rem;
+      color: var(--muted-text);
       display: flex;
       align-items: center;
       justify-content: center;

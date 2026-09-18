@@ -3,20 +3,19 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ChatService } from '../../../core/services/chat.service';
 import { MarkdownFormatterService } from '../../../core/utils/markdown-formatter.util';
+import { TrendChartComponent } from '../chat-message/trend-chart.component';
+import { parseTrendData, TrendSeries } from '../../../core/utils/trend-parser.util';
 
 @Component({
   selector: 'app-chat-thread-view',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, TrendChartComponent],
   template: `
     <div class="thread-container">
-      <!-- Background Ambient Glow -->
-      <div class="thread-ambient-bg"></div>
-
       <!-- Header Bar -->
       <div class="thread-header">
         <button class="header-action-btn" (click)="chatService.setView('home')" title="Back to Home">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M19 12H5M12 19l-7-7 7-7" />
           </svg>
           <span>Home</span>
@@ -24,7 +23,7 @@ import { MarkdownFormatterService } from '../../../core/utils/markdown-formatter
 
         <div class="session-pill">
           <span class="live-pulse-dot"></span>
-          <span class="session-title">Live Session</span>
+          <span class="session-title">Active Analytics Session</span>
           <span class="model-tag">{{ chatService.selectedModel() }}</span>
         </div>
 
@@ -44,40 +43,40 @@ import { MarkdownFormatterService } from '../../../core/utils/markdown-formatter
       <!-- Conversation Scroll Stream -->
       <div class="messages-stream">
         @if (chatService.messages().length === 0) {
-          <!-- Clean Empty State (No Hardcoded Chat!) -->
+          <!-- Clean Empty State -->
           <div class="empty-thread-state">
-            <div class="empty-gem-icon">
-              <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor">
-                <path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2 12L9.6 9.6L12 2Z" />
+            <div class="empty-icon-box">
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
               </svg>
             </div>
-            <h3 class="empty-title">Ask. Analyze. Understand.</h3>
-            <p class="empty-desc">Get intelligent answers to your finance and business questions.</p>
+            <h3 class="empty-title">CFO Conversational Analytics</h3>
+            <p class="empty-desc">Ask questions about invoices, vendor spending, working capital metrics, or trend analysis.</p>
           </div>
         } @else {
           @for (msg of chatService.messages(); track msg.id) {
             @if (msg.role === 'user') {
-              <!-- User Message: Luminous Emerald Gradient Pill Bubble -->
+              <!-- User Message -->
               <div class="message-row user-row">
-                <div class="user-bubble-pill">
+                <div class="user-bubble">
                   {{ msg.content }}
                 </div>
               </div>
             } @else {
-              <!-- Assistant Message: Dark-Green Response Container -->
+              <!-- AI Assistant Response Container -->
               <div class="message-row assistant-row">
-                <div class="assistant-dot-icon">
-                  <div class="dot-inner"></div>
-                </div>
                 <div class="assistant-content">
                   <div class="assistant-card-container">
-                    <!-- Container Header -->
+                    <!-- Header -->
                     <div class="assistant-card-header">
                       <div class="card-title-group">
-                        <svg class="sparkle-icon" viewBox="0 0 24 24" width="13" height="13" fill="currentColor">
-                          <path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2 12L9.6 9.6L12 2Z" />
-                        </svg>
-                        <span class="card-title">FinAI Response</span>
+                        <div class="ai-avatar-badge">
+                          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <path d="M3 3v18h18"/>
+                            <path d="M18 9l-5 5-4-4-3 3"/>
+                          </svg>
+                        </div>
+                        <span class="card-title">CFO Conversational Analytics</span>
                       </div>
                       <button
                         class="copy-btn"
@@ -86,7 +85,7 @@ import { MarkdownFormatterService } from '../../../core/utils/markdown-formatter
                         title="Copy response to clipboard"
                       >
                         @if (copiedMessageId() === msg.id) {
-                          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5">
+                          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2">
                             <polyline points="20 6 9 17 4 12" />
                           </svg>
                           <span>Copied</span>
@@ -100,8 +99,13 @@ import { MarkdownFormatterService } from '../../../core/utils/markdown-formatter
                       </button>
                     </div>
 
-                    <!-- Container Body: Markdown Content -->
+                    <!-- Markdown Content -->
                     <div class="assistant-markdown-content" [innerHTML]="markdownFormatter.formatMarkdown(msg.content)"></div>
+
+                    <!-- Graphical Trend Visualization -->
+                    @if (getTrendSeries(msg.content); as trend) {
+                      <app-trend-chart [trendData]="trend" />
+                    }
 
                     @if (msg.agent) {
                       <div class="assistant-card-footer">
@@ -114,175 +118,137 @@ import { MarkdownFormatterService } from '../../../core/utils/markdown-formatter
             }
           }
 
-          <!-- Polished Enterprise AI Processing Indicator -->
+          <!-- Subtle Enterprise Loading State -->
           @if (chatService.isAwaitingBackend()) {
             <div class="message-row assistant-row loading-row">
-              <div class="assistant-dot-icon glowing-dot-pulse">
-                <div class="dot-inner"></div>
-              </div>
               <div class="loading-status-card">
-                <div class="loading-header">
-                  <span class="loading-status-text">{{ currentLoadingStatus() }}</span>
-                  <div class="loading-typing-dots">
-                    <span class="dot"></span>
-                    <span class="dot"></span>
-                    <span class="dot"></span>
-                  </div>
-                </div>
+                <div class="loading-spinner"></div>
+                <span class="loading-status-text">{{ currentLoadingStatus() }}</span>
               </div>
             </div>
           }
         }
       </div>
 
-      <!-- Follow-up Capsule Composer -->
+      <!-- Composer Bar -->
       <div class="composer-outer">
-        <div class="thread-composer-capsule">
+        <div class="thread-composer-box">
           <input
             type="text"
             class="thread-input"
-            placeholder="Ask a question..."
+            placeholder="Ask a follow-up question or request trend analysis..."
             [(ngModel)]="inputText"
             (keydown.enter)="onSend()"
             autofocus
           />
 
-          <div class="thread-composer-actions">
-            <!-- Glowing Emerald Send Circle Button -->
-            <button
-              class="send-emerald-circle"
-              (click)="onSend()"
-              title="Send message"
-            >
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                <path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2 12L9.6 9.6L12 2Z" />
-              </svg>
-            </button>
-          </div>
+          <button
+            class="send-btn"
+            [disabled]="!inputText.trim()"
+            (click)="onSend()"
+            title="Send message"
+            aria-label="Send message"
+          >
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="22" y1="2" x2="11" y2="13"></line>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+          </button>
         </div>
       </div>
     </div>
   `,
   styles: [`
     .thread-container {
-      position: relative;
       width: 100%;
       height: 100%;
-      min-height: calc(100vh - 60px);
+      min-height: calc(100vh - 68px);
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: 20px 32px 28px;
+      padding: 16px 24px 20px;
       overflow: hidden;
-      background: var(--bg-ambient-thread);
-      transition: background 0.3s ease;
-    }
-
-    .thread-ambient-bg {
-      position: absolute;
-      top: -100px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 700px;
-      height: 400px;
-      background: radial-gradient(
-        circle,
-        var(--top-glow-color) 0%,
-        transparent 70%
-      );
-      filter: var(--top-glow-filter);
-      pointer-events: none;
-      z-index: 0;
-      transition: all 0.3s ease;
+      background: var(--bg-app);
     }
 
     /* ── Header ── */
     .thread-header {
-      position: relative;
-      z-index: 1;
       width: 100%;
-      max-width: 800px;
+      max-width: 820px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 20px;
-      animation: fadeInUp 400ms ease;
+      margin-bottom: 14px;
+      padding-bottom: 8px;
     }
 
     .header-action-btn {
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      padding: 6px 14px;
-      background: var(--pill-bg);
-      border: 1px solid var(--pill-border);
-      border-radius: 999px;
+      padding: 5px 12px;
+      background: var(--card-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-base);
       color: var(--text-secondary);
-      font-size: 0.82rem;
+      font-size: 0.8rem;
       font-weight: 500;
-      transition: all 0.2s ease;
+      transition: all 0.15s ease;
 
       &:hover {
-        color: var(--text-primary);
-        border-color: rgba(16, 185, 129, 0.4);
-        background: rgba(16, 185, 129, 0.12);
+        background: var(--secondary-surface);
+        color: var(--foreground);
       }
 
       &.clear-btn:hover {
-        color: #ef4444;
-        border-color: rgba(239, 68, 68, 0.4);
-        background: rgba(239, 68, 68, 0.1);
+        color: var(--color-destructive);
+        border-color: oklch(0.55 0.22 25 / 0.3);
       }
     }
 
     .session-pill {
       display: inline-flex;
       align-items: center;
-      gap: 10px;
-      padding: 7px 16px;
-      background: var(--pill-bg);
-      border: 1px solid var(--pill-border);
-      border-radius: 999px;
-      backdrop-filter: blur(16px);
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-      transition: all 0.3s ease;
+      gap: 8px;
+      padding: 5px 14px;
+      background: var(--card-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-pill);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
     }
 
     .live-pulse-dot {
-      width: 8px;
-      height: 8px;
+      width: 6px;
+      height: 6px;
       border-radius: 50%;
-      background: #10b981;
-      box-shadow: 0 0 10px #10b981;
-      animation: pulse 1.5s infinite;
+      background: var(--color-success);
     }
 
     .session-title {
-      font-size: 0.88rem;
+      font-size: 0.82rem;
       font-weight: 600;
-      color: var(--pill-text);
+      color: var(--foreground);
     }
 
     .model-tag {
-      font-size: 0.76rem;
-      color: var(--text-muted);
-      background: var(--tool-btn-bg);
-      padding: 2px 8px;
-      border-radius: 999px;
+      font-size: 0.72rem;
+      color: var(--muted-text);
+      background: var(--secondary-surface);
+      padding: 2px 7px;
+      border-radius: var(--radius-pill);
+      font-family: var(--font-mono);
     }
 
     /* ── Message Stream ── */
     .messages-stream {
-      position: relative;
-      z-index: 1;
       flex: 1;
       width: 100%;
-      max-width: 800px;
+      max-width: 820px;
       overflow-y: auto;
       display: flex;
       flex-direction: column;
-      gap: 22px;
-      padding: 10px 16px 20px;
+      gap: 16px;
+      padding: 4px 6px 16px;
     }
 
     /* ── Empty State ── */
@@ -292,42 +258,40 @@ import { MarkdownFormatterService } from '../../../core/utils/markdown-formatter
       flex-direction: column;
       align-items: center;
       text-align: center;
-      padding: 40px 20px;
-      animation: fadeInScale 400ms ease;
+      padding: 30px 20px;
     }
 
-    .empty-gem-icon {
-      width: 56px;
-      height: 56px;
-      border-radius: 18px;
-      background: radial-gradient(circle at 35% 30%, #34d399, #059669);
-      box-shadow: 0 0 24px rgba(16, 185, 129, 0.4);
+    .empty-icon-box {
+      width: 48px;
+      height: 48px;
+      border-radius: var(--radius-base);
+      background: var(--secondary-surface);
+      border: 1px solid var(--border-color);
       display: flex;
       align-items: center;
       justify-content: center;
-      color: #022c22;
-      margin-bottom: 20px;
+      color: var(--primary-accent);
+      margin-bottom: 14px;
     }
 
     .empty-title {
-      font-size: 1.25rem;
+      font-size: 1.15rem;
       font-weight: 700;
-      color: var(--headline-color);
-      margin-bottom: 8px;
-      letter-spacing: -0.02em;
+      color: var(--foreground);
+      margin-bottom: 6px;
     }
 
     .empty-desc {
-      font-size: 0.9rem;
-      color: var(--text-muted);
-      max-width: 420px;
+      font-size: 0.88rem;
+      color: var(--muted-text);
+      max-width: 440px;
       line-height: 1.5;
     }
 
     .message-row {
       display: flex;
       width: 100%;
-      animation: fadeInUp 350ms ease both;
+      animation: fadeInUp 250ms ease both;
     }
 
     /* ── User Bubble ── */
@@ -335,64 +299,37 @@ import { MarkdownFormatterService } from '../../../core/utils/markdown-formatter
       justify-content: flex-end;
     }
 
-    .user-bubble-pill {
+    .user-bubble {
       max-width: 78%;
-      padding: 14px 22px;
-      border-radius: 24px;
-      border-bottom-right-radius: 8px;
-      background: var(--user-bubble-bg);
-      box-shadow: var(--user-bubble-shadow);
-      color: var(--user-bubble-color);
-      font-size: 0.95rem;
+      padding: 10px 16px;
+      border-radius: var(--radius-card);
+      border-bottom-right-radius: 2px;
+      background: var(--primary-accent);
+      color: #ffffff;
+      font-size: 0.9rem;
       font-weight: 500;
-      line-height: 1.45;
-      letter-spacing: -0.01em;
+      line-height: 1.5;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+      word-break: break-word;
+      white-space: pre-wrap;
     }
 
-    /* ── Assistant Message ── */
+    /* ── Assistant Response Container (oklch(1 0 0) white surface) ── */
     .assistant-row {
       justify-content: flex-start;
-      gap: 14px;
       align-items: flex-start;
     }
 
-    .assistant-dot-icon {
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
-      background: var(--assistant-dot-bg);
-      border: 1px solid var(--assistant-dot-border);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-      margin-top: 4px;
-      transition: all 0.3s ease;
-    }
-
-    .dot-inner {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      background: radial-gradient(circle at 35% 35%, #34d399, #059669);
-      box-shadow: 0 0 10px rgba(16, 185, 129, 0.8);
-    }
-
     .assistant-content {
-      flex: 1;
-      max-width: 88%;
-      padding: 2px 0;
+      width: 100%;
     }
 
-    /* ── Assistant Response Dark-Green Container ── */
     .assistant-card-container {
-      background: var(--response-card-bg, var(--new-chat-bg));
-      border: 1px solid var(--response-card-border, var(--new-chat-border));
-      border-radius: 16px;
-      padding: 16px 22px;
-      box-shadow: var(--response-card-shadow, 0 4px 24px rgba(0, 0, 0, 0.3));
-      backdrop-filter: blur(12px);
-      transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+      background: var(--card-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-card);
+      padding: 16px 20px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
     }
 
     .assistant-card-header {
@@ -400,121 +337,119 @@ import { MarkdownFormatterService } from '../../../core/utils/markdown-formatter
       align-items: center;
       justify-content: space-between;
       margin-bottom: 12px;
-      padding-bottom: 10px;
-      border-bottom: 1px solid rgba(16, 185, 129, 0.15);
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border-color);
     }
 
     .card-title-group {
       display: flex;
       align-items: center;
-      gap: 6px;
-      color: var(--response-header-title, #34d399);
-      font-size: 0.82rem;
-      font-weight: 600;
-      letter-spacing: 0.02em;
+      gap: 7px;
     }
 
-    .sparkle-icon {
-      color: var(--response-header-title, #34d399);
-      filter: drop-shadow(0 0 6px rgba(16, 185, 129, 0.4));
+    .ai-avatar-badge {
+      width: 22px;
+      height: 22px;
+      border-radius: 4px;
+      background: var(--primary-accent);
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .card-title {
+      font-size: 0.84rem;
+      font-weight: 700;
+      color: var(--foreground);
+      letter-spacing: -0.01em;
     }
 
     .copy-btn {
       display: inline-flex;
       align-items: center;
-      gap: 5px;
-      padding: 4px 10px;
-      border-radius: 6px;
-      background: var(--tool-btn-bg, rgba(255, 255, 255, 0.06));
-      border: 1px solid var(--tool-btn-border, rgba(255, 255, 255, 0.1));
-      color: var(--text-secondary, #94a3b8);
-      font-size: 0.76rem;
+      gap: 4px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      background: var(--secondary-surface);
+      border: 1px solid var(--border-color);
+      color: var(--muted-text);
+      font-size: 0.74rem;
       font-weight: 500;
       cursor: pointer;
-      transition: all 0.2s ease;
+      transition: all 0.15s ease;
 
       &:hover {
-        background: rgba(16, 185, 129, 0.14);
-        color: var(--response-header-title, #34d399);
-        border-color: rgba(16, 185, 129, 0.35);
+        color: var(--foreground);
+        border-color: oklch(0.8 0.015 260);
       }
 
       &.copied {
-        background: rgba(16, 185, 129, 0.22);
-        color: var(--response-header-title, #34d399);
-        border-color: #10b981;
-        box-shadow: 0 0 8px rgba(16, 185, 129, 0.3);
+        color: var(--color-success);
+        border-color: var(--color-success);
       }
     }
 
     .assistant-card-footer {
-      margin-top: 10px;
+      margin-top: 12px;
       padding-top: 8px;
-      border-top: 1px dashed rgba(16, 185, 129, 0.15);
+      border-top: 1px dashed var(--border-color);
     }
 
-    /* ── Structured Assistant Markdown Formatting ── */
+    .assistant-agent-meta {
+      display: inline-block;
+      font-size: 0.72rem;
+      color: var(--muted-text);
+    }
+
+    /* ── Assistant Markdown Presentation ── */
     ::ng-deep .assistant-markdown-content {
-      color: var(--text-primary);
-      font-size: 0.95rem;
-      line-height: 1.65;
-      letter-spacing: -0.01em;
+      color: var(--foreground);
+      font-size: 0.92rem;
+      line-height: 1.6;
 
       p {
-        margin: 0 0 12px 0;
-        color: var(--text-primary);
-
-        &:last-child {
-          margin-bottom: 0;
-        }
+        margin: 0 0 10px 0;
+        &:last-child { margin-bottom: 0; }
       }
 
       h1, h2, h3, h4, h5, h6 {
-        margin: 18px 0 10px 0;
-        font-weight: 600;
-        color: var(--headline-color);
-        letter-spacing: -0.02em;
-
-        &:first-child {
-          margin-top: 0;
-        }
+        margin: 14px 0 8px 0;
+        font-weight: 700;
+        color: var(--foreground);
+        letter-spacing: -0.01em;
+        &:first-child { margin-top: 0; }
       }
 
       h1, h2, h3 {
-        font-size: 1.08rem;
-        color: var(--response-header-title, #34d399);
+        font-size: 1.05rem;
+        color: var(--foreground);
       }
 
       h4, h5, h6 {
-        font-size: 0.98rem;
-        color: var(--headline-color);
+        font-size: 0.95rem;
       }
 
       ul, ol {
-        margin: 8px 0 14px 0;
-        padding-left: 22px;
-        color: var(--text-primary);
+        margin: 8px 0 12px 0;
+        padding-left: 20px;
       }
 
       li {
-        margin-bottom: 6px;
-        color: var(--text-primary);
-
-        &:last-child {
-          margin-bottom: 0;
-        }
+        margin-bottom: 4px;
+        &:last-child { margin-bottom: 0; }
       }
 
       pre {
-        background: var(--code-block-bg, rgba(15, 23, 42, 0.6));
-        border: 1px solid var(--code-block-border, rgba(16, 185, 129, 0.25));
-        border-radius: 10px;
-        padding: 14px 18px;
-        margin: 14px 0;
+        background: var(--secondary-surface);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-base);
+        padding: 12px 14px;
+        margin: 12px 0;
         overflow-x: auto;
-        font-family: 'Fira Code', 'Consolas', monospace;
-        font-size: 0.88rem;
-        color: var(--code-block-text, #e2e8f0);
+        font-family: var(--font-mono);
+        font-size: 0.85rem;
+        color: var(--foreground);
 
         code {
           background: transparent;
@@ -522,176 +457,155 @@ import { MarkdownFormatterService } from '../../../core/utils/markdown-formatter
           border-radius: 0;
           color: inherit;
           font-family: inherit;
-          font-size: inherit;
         }
       }
 
       code {
-        background: var(--inline-code-bg, rgba(16, 185, 129, 0.14));
-        color: var(--inline-code-text, #34d399);
-        border: 1px solid var(--inline-code-border, rgba(16, 185, 129, 0.2));
-        padding: 2px 6px;
-        border-radius: 5px;
-        font-family: 'Fira Code', 'Consolas', monospace;
-        font-size: 0.88rem;
+        background: var(--secondary-surface);
+        color: var(--primary-accent);
+        border: 1px solid var(--border-color);
+        padding: 2px 5px;
+        border-radius: 4px;
+        font-family: var(--font-mono);
+        font-size: 0.85rem;
       }
 
       blockquote {
-        border-left: 3px solid #10b981;
-        margin: 12px 0;
-        padding: 6px 0 6px 14px;
-        color: var(--text-muted);
-        font-style: italic;
-        background: rgba(16, 185, 129, 0.05);
-        border-radius: 0 6px 6px 0;
+        border-left: 3px solid var(--primary-accent);
+        margin: 10px 0;
+        padding: 6px 0 6px 12px;
+        color: var(--muted-text);
+        background: var(--secondary-surface);
+        border-radius: 0 4px 4px 0;
       }
 
       hr {
         border: none;
-        border-top: 1px solid var(--topbar-border, rgba(16, 185, 129, 0.2));
-        margin: 16px 0;
+        border-top: 1px solid var(--border-color);
+        margin: 14px 0;
+      }
+
+      /* Clean Financial Tables */
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 12px 0;
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-base);
+        font-size: 0.86rem;
+
+        th {
+          background: var(--secondary-surface);
+          color: var(--text-secondary);
+          font-weight: 600;
+          padding: 8px 12px;
+          border-bottom: 1px solid var(--border-color);
+          text-align: left;
+        }
+
+        td {
+          padding: 8px 12px;
+          border-bottom: 1px solid var(--border-color);
+          color: var(--foreground);
+        }
+
+        tr:last-child td {
+          border-bottom: none;
+        }
+
+        tr:hover td {
+          background: oklch(0.985 0.003 260);
+        }
       }
     }
 
-    .assistant-agent-meta {
-      display: inline-block;
-      margin-top: 8px;
-      font-size: 0.74rem;
-      color: var(--text-muted);
-    }
-
-    /* ── Polished Enterprise AI Processing Indicator ── */
+    /* ── Subtle Enterprise Loading ── */
     .loading-row {
-      margin-top: 4px;
-      animation: fadeInUp 300ms ease;
-    }
-
-    .glowing-dot-pulse {
-      animation: pulseGlow 2s ease-in-out infinite;
-    }
-
-    @keyframes pulseGlow {
-      0%, 100% {
-        box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
-        border-color: rgba(16, 185, 129, 0.3);
-      }
-      50% {
-        box-shadow: 0 0 18px rgba(16, 185, 129, 0.8);
-        border-color: rgba(16, 185, 129, 0.6);
-      }
+      margin-top: 2px;
     }
 
     .loading-status-card {
       display: inline-flex;
       align-items: center;
-      gap: 12px;
-      padding: 10px 18px;
-      border-radius: 14px;
-      background: var(--response-card-bg, var(--new-chat-bg));
-      border: 1px solid var(--response-card-border, var(--new-chat-border));
-      backdrop-filter: blur(16px);
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-      transition: all 0.3s ease;
+      gap: 10px;
+      padding: 8px 14px;
+      border-radius: var(--radius-base);
+      background: var(--card-surface);
+      border: 1px solid var(--border-color);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
     }
 
-    .loading-header {
-      display: flex;
-      align-items: center;
-      gap: 10px;
+    .loading-spinner {
+      width: 14px;
+      height: 14px;
+      border: 2px solid var(--border-color);
+      border-top-color: var(--primary-accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
     }
 
     .loading-status-text {
-      font-size: 0.88rem;
+      font-size: 0.82rem;
       font-weight: 500;
-      color: var(--headline-color, #e2e8f0);
-      letter-spacing: -0.01em;
-      transition: opacity 0.3s ease;
-    }
-
-    .loading-typing-dots {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-    }
-
-    .loading-typing-dots .dot {
-      width: 5px;
-      height: 5px;
-      border-radius: 50%;
-      background: #34d399;
-      opacity: 0.4;
-      animation: dotPulse 1.4s infinite ease-in-out;
-    }
-
-    .loading-typing-dots .dot:nth-child(1) { animation-delay: 0s; }
-    .loading-typing-dots .dot:nth-child(2) { animation-delay: 0.2s; }
-    .loading-typing-dots .dot:nth-child(3) { animation-delay: 0.4s; }
-
-    @keyframes dotPulse {
-      0%, 80%, 100% { transform: scale(0.8); opacity: 0.3; }
-      40% { transform: scale(1.3); opacity: 1; box-shadow: 0 0 6px #34d399; }
+      color: var(--muted-text);
     }
 
     /* ── Floating Capsule Composer ── */
     .composer-outer {
-      position: relative;
-      z-index: 1;
       width: 100%;
-      max-width: 800px;
-      padding-top: 12px;
+      max-width: 820px;
+      padding-top: 8px;
     }
 
-    .thread-composer-capsule {
+    .thread-composer-box {
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      padding: 10px 14px 10px 20px;
-      background: var(--composer-bg);
-      border: 1px solid var(--composer-border);
-      border-radius: 999px;
-      backdrop-filter: blur(24px);
+      gap: 10px;
+      padding: 6px 8px 6px 16px;
+      background: var(--card-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-card);
       box-shadow: var(--composer-shadow);
-      transition: all 0.25s ease;
+      transition: all 0.15s ease;
 
       &:focus-within {
-        border-color: var(--composer-border-focus);
-        box-shadow: var(--composer-shadow-focus);
+        border-color: var(--primary-accent);
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05), 0 0 0 1px var(--primary-accent);
       }
     }
 
     .thread-input {
       flex: 1;
-      font-size: 0.95rem;
-      color: var(--composer-input-color);
-      transition: color 0.3s ease;
+      font-size: 0.92rem;
+      color: var(--foreground);
 
       &::placeholder {
-        color: var(--composer-placeholder);
+        color: var(--muted-text);
       }
     }
 
-    .thread-composer-actions {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .send-emerald-circle {
-      width: 38px;
-      height: 38px;
-      border-radius: 50%;
-      background: var(--glowing-btn-bg);
-      box-shadow: var(--glowing-btn-shadow);
+    .send-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: var(--radius-base);
+      background: var(--primary-accent);
+      color: #ffffff;
       display: flex;
       align-items: center;
       justify-content: center;
-      color: var(--glowing-btn-color);
-      transition: all 0.25s ease;
+      transition: all 0.15s ease;
 
-      &:hover {
-        transform: scale(1.08);
-        box-shadow: var(--glowing-btn-shadow-hover);
+      &:hover:not(:disabled) {
+        opacity: 0.92;
+      }
+
+      &:disabled {
+        opacity: 0.35;
+        cursor: not-allowed;
       }
     }
   `],
@@ -702,10 +616,9 @@ export class ChatThreadViewComponent implements OnDestroy {
   inputText = '';
 
   private readonly loadingSteps = [
-    'Processing your request...',
-    'Understanding your request...',
-    'Analyzing the information...',
-    'Preparing your response...',
+    'Analyzing financial data...',
+    'Evaluating working capital metrics...',
+    'Generating analytics response...',
   ];
 
   readonly currentStepIndex = signal(0);
@@ -727,7 +640,7 @@ export class ChatThreadViewComponent implements OnDestroy {
     this.stopLoadingRotation();
     this.loadingInterval = setInterval(() => {
       this.currentStepIndex.update((idx) => (idx + 1) % this.loadingSteps.length);
-    }, 2200);
+    }, 2500);
   }
 
   private stopLoadingRotation(): void {
@@ -742,6 +655,11 @@ export class ChatThreadViewComponent implements OnDestroy {
   }
 
   readonly copiedMessageId = signal<string | null>(null);
+
+  getTrendSeries(content?: string): TrendSeries | null {
+    if (!content) return null;
+    return parseTrendData(content);
+  }
 
   copyResponseText(text: string, msgId: string): void {
     if (!text) return;
@@ -792,5 +710,3 @@ export class ChatThreadViewComponent implements OnDestroy {
     this.inputText = '';
   }
 }
-
-

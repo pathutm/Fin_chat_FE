@@ -15,11 +15,11 @@ import { VoiceOrbComponent } from '../voice-orb/voice-orb.component';
           <!-- Top bar with Close pill -->
           <div class="voice-top">
             <button class="close-pill" (click)="voiceService.closeOverlay()" id="voice-close-btn">
-              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
                 <line x1="18" y1="6" x2="6" y2="18"></line>
                 <line x1="6" y1="6" x2="18" y2="18"></line>
               </svg>
-              <span>Close chat</span>
+              <span>Close Voice</span>
             </button>
           </div>
 
@@ -29,9 +29,9 @@ import { VoiceOrbComponent } from '../voice-orb/voice-orb.component';
 
             <div class="listening-status">
               @if (voiceService.state() === 'listening') {
-                <span class="status-text">FinChat is listening...</span>
+                <span class="status-text">Listening to your query...</span>
               } @else if (voiceService.state() === 'processing') {
-                <span class="status-text">Processing...</span>
+                <span class="status-text">Processing audio...</span>
               } @else {
                 <span class="status-text">Tap mic to start</span>
               }
@@ -43,14 +43,14 @@ import { VoiceOrbComponent } from '../voice-orb/voice-orb.component';
             @if (voiceService.transcribedText()) {
               <p class="transcript-text">{{ voiceService.transcribedText() }}</p>
             } @else {
-              <p class="transcript-placeholder">Your voice will appear here...</p>
+              <p class="transcript-placeholder">Your voice transcription will appear here...</p>
             }
           </div>
 
           <!-- Bottom Controls -->
           <div class="voice-controls">
             <button class="control-btn" (click)="voiceService.toggleListening()" aria-label="Pause">
-              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 @if (voiceService.state() === 'listening') {
                   <rect x="6" y="4" width="4" height="16"></rect>
                   <rect x="14" y="4" width="4" height="16"></rect>
@@ -67,7 +67,7 @@ import { VoiceOrbComponent } from '../voice-orb/voice-orb.component';
               id="voice-mic-btn"
               aria-label="Toggle microphone"
             >
-              <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"></path>
                 <path d="M19 10v2a7 7 0 01-14 0v-2"></path>
                 <line x1="12" y1="19" x2="12" y2="23"></line>
@@ -75,8 +75,8 @@ import { VoiceOrbComponent } from '../voice-orb/voice-orb.component';
               </svg>
             </button>
 
-            <button class="control-btn" (click)="onSend()" aria-label="Send">
-              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <button class="control-btn send" (click)="onSend()" aria-label="Send">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="22" y1="2" x2="11" y2="13"></line>
                 <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
               </svg>
@@ -91,32 +91,26 @@ import { VoiceOrbComponent } from '../voice-orb/voice-orb.component';
       position: fixed;
       inset: 0;
       z-index: 1000;
-      background: rgba(6, 13, 10, 0.92);
-      backdrop-filter: blur(20px);
+      background: rgba(15, 23, 42, 0.45);
+      backdrop-filter: blur(6px);
       display: flex;
       align-items: center;
       justify-content: center;
-      animation: fadeIn 300ms ease;
+      animation: fadeInScale 0.2s ease;
     }
 
     .voice-screen {
       width: 100%;
-      max-width: 520px;
-      height: 85vh;
-      max-height: 700px;
+      max-width: 460px;
+      height: 75vh;
+      max-height: 600px;
       display: flex;
       flex-direction: column;
       align-items: center;
-      border-radius: var(--radius-xl);
-      background: radial-gradient(
-        ellipse at 50% 40%,
-        rgba(16, 185, 129, 0.08) 0%,
-        var(--surface-base) 50%,
-        var(--surface-dark) 100%
-      );
-      border: 1px solid rgba(16, 185, 129, 0.1);
-      box-shadow: var(--glow-lg);
-      animation: fadeInScale 400ms ease;
+      border-radius: var(--radius-card);
+      background: var(--card-surface);
+      border: 1px solid var(--border-color);
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.08);
       padding: 24px;
     }
 
@@ -124,25 +118,25 @@ import { VoiceOrbComponent } from '../voice-orb/voice-orb.component';
       width: 100%;
       display: flex;
       justify-content: center;
-      margin-bottom: 16px;
+      margin-bottom: 12px;
     }
 
     .close-pill {
       display: flex;
       align-items: center;
       gap: 6px;
-      padding: 8px 16px;
-      border-radius: var(--radius-full);
-      background: rgba(16, 185, 129, 0.12);
-      border: 1px solid rgba(16, 185, 129, 0.2);
-      color: var(--emerald-400);
-      font-size: 0.8rem;
+      padding: 6px 14px;
+      border-radius: var(--radius-pill);
+      background: var(--secondary-surface);
+      border: 1px solid var(--border-color);
+      color: var(--muted-text);
+      font-size: 0.78rem;
       font-weight: 500;
-      transition: all var(--transition-fast);
+      transition: all 0.15s ease;
 
       &:hover {
-        background: rgba(16, 185, 129, 0.2);
-        border-color: rgba(16, 185, 129, 0.4);
+        background: var(--secondary-surface);
+        color: var(--foreground);
       }
     }
 
@@ -152,7 +146,7 @@ import { VoiceOrbComponent } from '../voice-orb/voice-orb.component';
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 24px;
+      gap: 18px;
     }
 
     .listening-status {
@@ -160,79 +154,86 @@ import { VoiceOrbComponent } from '../voice-orb/voice-orb.component';
     }
 
     .status-text {
-      font-size: 0.9rem;
+      font-size: 0.88rem;
       color: var(--text-secondary);
-      animation: pulse 2s ease-in-out infinite;
+      font-weight: 500;
     }
 
     .voice-transcript {
       width: 100%;
       text-align: center;
-      padding: 16px 24px;
-      min-height: 80px;
+      padding: 12px 16px;
+      min-height: 60px;
       display: flex;
       align-items: center;
       justify-content: center;
     }
 
     .transcript-text {
-      font-size: 1.15rem;
+      font-size: 1rem;
       font-weight: 500;
-      color: var(--text-primary);
+      color: var(--foreground);
       line-height: 1.5;
     }
 
     .transcript-placeholder {
-      font-size: 0.9rem;
-      color: var(--text-tertiary);
+      font-size: 0.86rem;
+      color: var(--muted-text);
     }
 
     .voice-controls {
       display: flex;
       align-items: center;
-      gap: 24px;
-      padding: 20px 0;
+      gap: 18px;
+      padding: 12px 0 6px;
     }
 
     .control-btn {
-      width: 48px;
-      height: 48px;
+      width: 40px;
+      height: 40px;
       border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
-      background: var(--surface-elevated);
-      border: 1px solid var(--surface-border-subtle);
+      background: var(--secondary-surface);
+      border: 1px solid var(--border-color);
       color: var(--text-secondary);
-      transition: all var(--transition-fast);
+      transition: all 0.15s ease;
 
       &:hover {
-        background: var(--surface-hover);
-        color: var(--text-primary);
-        border-color: rgba(16, 185, 129, 0.2);
+        background: var(--card-surface);
+        color: var(--foreground);
+      }
+
+      &.send {
+        background: var(--primary-accent);
+        color: #ffffff;
+        border-color: var(--primary-accent);
+
+        &:hover {
+          opacity: 0.92;
+        }
       }
     }
 
     .mic-btn {
-      width: 64px;
-      height: 64px;
+      width: 52px;
+      height: 52px;
       border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
-      background: var(--emerald-600);
+      background: var(--primary-accent);
       color: white;
-      transition: all var(--transition-fast);
+      transition: all 0.15s ease;
 
       &:hover {
-        background: var(--emerald-500);
-        box-shadow: var(--glow-md);
+        opacity: 0.92;
+        transform: scale(1.04);
       }
 
       &.active {
-        background: var(--emerald-500);
-        box-shadow: 0 0 30px rgba(16, 185, 129, 0.5);
-        animation: pulseGlow 2s ease-in-out infinite;
+        box-shadow: 0 0 0 4px oklch(0.32 0.11 265 / 0.2);
       }
     }
   `],

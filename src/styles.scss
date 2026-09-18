@@ -1,220 +1,106 @@
 /* ═══════════════════════════════════════════════════════════════
-   FinChat — Global Design System (Emerald Green Theme)
-   Supports Dark Mode (Default) & Light Mode
+   CFO Conversational Analytics — Design System
+   Official Working Capital Intelligence Light Enterprise Theme
    ═══════════════════════════════════════════════════════════════ */
 
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Geist+Mono:wght@300;400;500;600;700&family=Geist:wght@300;400;500;600;700;800&display=swap');
 
-:root, body.dark-theme {
-  /* Emerald Core Tokens */
-  --emerald-glow: #10b981;
-  --emerald-bright: #34d399;
-  --emerald-neon: #6ee7b7;
-  --emerald-primary: #059669;
-  --emerald-dark: #047857;
-  --emerald-deep: #064e3b;
-  --emerald-forest: #022c22;
-  --emerald-obsidian: #030805;
+:root,
+body {
+  /* ── Exact OKLCH Design Tokens ── */
+  --bg-app: oklch(0.99 0.002 260);
+  --foreground: oklch(0.2 0.02 265);
+  --card-surface: oklch(1 0 0);
+  --primary-accent: oklch(0.32 0.11 265);
+  --secondary-surface: oklch(0.955 0.006 260);
+  --muted-text: oklch(0.5 0.02 265);
+  --border-color: oklch(0.9 0.008 260);
 
-  /* Surfaces & Ambient Lighting (Dark Theme) */
-  --bg-app: #030705;
-  --bg-ambient-home: radial-gradient(
-    ellipse at 50% -10%,
-    rgba(16, 185, 129, 0.45) 0%,
-    rgba(5, 150, 105, 0.22) 30%,
-    rgba(2, 44, 34, 0.55) 55%,
-    #030705 90%
-  );
-  --bg-ambient-thread: radial-gradient(
-    ellipse at 50% 0%,
-    rgba(16, 185, 129, 0.35) 0%,
-    rgba(5, 150, 105, 0.16) 35%,
-    rgba(2, 44, 34, 0.5) 65%,
-    #030705 92%
-  );
-  --top-glow-filter: blur(60px);
-  --top-glow-color: rgba(52, 211, 153, 0.3);
+  /* ── Semantic Status Colors (Separated from Primary) ── */
+  --color-success: oklch(0.55 0.14 155);
+  --color-warning: oklch(0.7 0.16 75);
+  --color-destructive: oklch(0.55 0.22 25);
 
-  /* Topbar */
-  --topbar-bg: rgba(3, 10, 7, 0.88);
-  --topbar-border: rgba(16, 185, 129, 0.16);
-  --topbar-tab-bg: rgba(2, 18, 12, 0.7);
-  --topbar-tab-border: rgba(16, 185, 129, 0.2);
-  --topbar-tab-text: rgba(240, 253, 244, 0.65);
-  --topbar-tab-active-bg: linear-gradient(135deg, rgba(5, 150, 105, 0.65), rgba(16, 185, 129, 0.45));
+  /* ── Chart Categorical Palette (Exact Order) ── */
+  --chart-1: oklch(0.58 0.16 256); /* Blue */
+  --chart-2: oklch(0.67 0.17 41);  /* Orange */
+  --chart-3: oklch(0.67 0.14 162); /* Teal */
+  --chart-4: oklch(0.76 0.16 75);  /* Amber */
+  --chart-5: oklch(0.72 0.14 357); /* Magenta */
+
+  /* ── Radii ── */
+  --radius-base: 0.5rem;
+  --radius-card: 0.625rem;
+  --radius-pill: 9999px;
+
+  /* ── Typography ── */
+  --font-sans: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* ── Component Surfaces ── */
+  --topbar-bg: oklch(1 0 0 / 0.95);
+  --topbar-border: var(--border-color);
+  --topbar-tab-bg: var(--secondary-surface);
+  --topbar-tab-border: var(--border-color);
+  --topbar-tab-text: var(--muted-text);
+  --topbar-tab-active-bg: var(--primary-accent);
   --topbar-tab-active-text: #ffffff;
-  --topbar-tab-active-border: rgba(52, 211, 153, 0.45);
+  --topbar-tab-active-border: var(--primary-accent);
 
-  /* Typography */
-  --headline-color: #ffffff;
-  --text-primary: #f0fdf4;
-  --text-secondary: rgba(240, 253, 244, 0.75);
-  --text-muted: rgba(240, 253, 244, 0.45);
-  --font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --headline-color: var(--foreground);
+  --text-primary: var(--foreground);
+  --text-secondary: oklch(0.35 0.02 265);
+  --text-muted: var(--muted-text);
 
-  /* Suggestion Cards */
-  --card-bg: rgba(5, 24, 17, 0.6);
-  --card-bg-hover: rgba(8, 36, 25, 0.85);
-  --card-border: rgba(16, 185, 129, 0.2);
-  --card-border-hover: rgba(52, 211, 153, 0.5);
-  --card-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-  --card-shadow-hover: 0 12px 30px rgba(0, 0, 0, 0.45), 0 0 25px rgba(16, 185, 129, 0.2);
-  --card-title: #ffffff;
-  --card-desc: rgba(240, 253, 244, 0.7);
-  --card-icon-bg: rgba(16, 185, 129, 0.15);
-  --card-icon-border: rgba(16, 185, 129, 0.3);
-  --card-icon-color: #34d399;
+  /* ── Suggestion Cards & Surfaces ── */
+  --card-bg: var(--card-surface);
+  --card-bg-hover: var(--secondary-surface);
+  --card-border: var(--border-color);
+  --card-border-hover: oklch(0.78 0.03 265);
+  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  --card-shadow-hover: 0 4px 12px rgba(0, 0, 0, 0.06);
 
-  /* Capsule Composer */
-  --composer-bg: rgba(6, 22, 16, 0.72);
-  --composer-border: rgba(16, 185, 129, 0.25);
-  --composer-border-focus: rgba(52, 211, 153, 0.5);
-  --composer-shadow: 0 16px 40px rgba(0, 0, 0, 0.5), 0 0 35px rgba(16, 185, 129, 0.12);
-  --composer-shadow-focus: 0 16px 40px rgba(0, 0, 0, 0.6), 0 0 45px rgba(16, 185, 129, 0.25);
-  --composer-input-color: #ffffff;
-  --composer-placeholder: rgba(240, 253, 244, 0.45);
-  --tool-btn-bg: rgba(255, 255, 255, 0.06);
-  --tool-btn-border: rgba(255, 255, 255, 0.1);
-  --tool-btn-color: rgba(255, 255, 255, 0.75);
+  /* ── Composer ── */
+  --composer-bg: var(--card-surface);
+  --composer-border: var(--border-color);
+  --composer-border-focus: var(--primary-accent);
+  --composer-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+  --composer-shadow-focus: 0 4px 20px rgba(0, 0, 0, 0.08), 0 0 0 1px var(--primary-accent);
+  --composer-input-color: var(--foreground);
+  --composer-placeholder: var(--muted-text);
 
-  /* User Greeting & Status Pills */
-  --pill-bg: rgba(6, 26, 18, 0.65);
-  --pill-border: rgba(16, 185, 129, 0.22);
-  --pill-text: #ffffff;
+  /* ── Buttons ── */
+  --btn-primary-bg: var(--primary-accent);
+  --btn-primary-text: #ffffff;
+  --btn-secondary-bg: var(--secondary-surface);
+  --btn-secondary-border: var(--border-color);
+  --btn-secondary-text: var(--foreground);
 
-  /* Circular Glowing Action Button */
-  --glowing-btn-bg: radial-gradient(circle at 35% 30%, #34d399, #059669);
-  --glowing-btn-color: #022c22;
-  --glowing-btn-shadow: 0 0 20px rgba(16, 185, 129, 0.6), 0 0 40px rgba(5, 150, 105, 0.3);
-  --glowing-btn-shadow-hover: 0 0 28px rgba(52, 211, 153, 0.8), 0 0 50px rgba(16, 185, 129, 0.5);
+  /* ── Response Container Tokens ── */
+  --response-card-bg: var(--card-surface);
+  --response-card-border: var(--border-color);
+  --response-header-title: var(--primary-accent);
+  --response-card-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
 
-  /* Chat Messages */
-  --user-bubble-bg: linear-gradient(135deg, #059669 0%, #10b981 100%);
+  --code-block-bg: var(--secondary-surface);
+  --code-block-border: var(--border-color);
+  --code-block-text: var(--foreground);
+  --inline-code-bg: var(--secondary-surface);
+  --inline-code-border: var(--border-color);
+  --inline-code-text: var(--primary-accent);
+
+  /* ── User Bubble ── */
+  --user-bubble-bg: var(--primary-accent);
   --user-bubble-color: #ffffff;
-  --user-bubble-shadow: 0 4px 20px rgba(16, 185, 129, 0.4), 0 1px 3px rgba(0, 0, 0, 0.3);
-  --assistant-text: rgba(240, 253, 244, 0.9);
-  --assistant-dot-bg: rgba(16, 185, 129, 0.15);
-  --assistant-dot-border: rgba(16, 185, 129, 0.3);
+  --user-bubble-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 
-  /* New Chat & Assistant Response Container Tokens (Dark Theme) */
-  --new-chat-bg: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(5, 150, 105, 0.1));
-  --new-chat-border: rgba(16, 185, 129, 0.2);
-  --response-card-bg: var(--new-chat-bg);
-  --response-card-border: var(--new-chat-border);
-  --response-header-title: #34d399;
-  --response-card-shadow: 0 4px 24px rgba(0, 0, 0, 0.35), 0 0 14px rgba(16, 185, 129, 0.08);
-
-  --code-block-bg: rgba(15, 23, 42, 0.7);
-  --code-block-border: rgba(16, 185, 129, 0.25);
-  --code-block-text: #e2e8f0;
-  --inline-code-bg: rgba(16, 185, 129, 0.14);
-  --inline-code-border: rgba(16, 185, 129, 0.2);
-  --inline-code-text: #34d399;
-
-  /* Backend Waiting Card */
-  --backend-card-bg: rgba(6, 26, 18, 0.55);
-  --backend-card-border: rgba(16, 185, 129, 0.35);
-  --backend-card-title: #34d399;
-}
-
-/* ── Light Mode System ── */
-body.light-theme {
-  --bg-app: #f4fbf7;
-  --bg-ambient-home: radial-gradient(
-    ellipse at 50% -10%,
-    rgba(16, 185, 129, 0.24) 0%,
-    rgba(5, 150, 105, 0.12) 35%,
-    rgba(209, 250, 229, 0.45) 60%,
-    #f4fbf7 90%
-  );
-  --bg-ambient-thread: radial-gradient(
-    ellipse at 50% 0%,
-    rgba(16, 185, 129, 0.2) 0%,
-    rgba(209, 250, 229, 0.35) 45%,
-    #f4fbf7 90%
-  );
-  --top-glow-filter: blur(50px);
-  --top-glow-color: rgba(16, 185, 129, 0.2);
-
-  /* Topbar */
-  --topbar-bg: rgba(255, 255, 255, 0.9);
-  --topbar-border: rgba(16, 185, 129, 0.2);
-  --topbar-tab-bg: rgba(236, 253, 245, 0.8);
-  --topbar-tab-border: rgba(16, 185, 129, 0.22);
-  --topbar-tab-text: #064e3b;
-  --topbar-tab-active-bg: linear-gradient(135deg, #059669 0%, #10b981 100%);
-  --topbar-tab-active-text: #ffffff;
-  --topbar-tab-active-border: #059669;
-
-  /* Typography */
-  --headline-color: #032b1d;
-  --text-primary: #042e1f;
-  --text-secondary: #134e3a;
-  --text-muted: #3d6a57;
-
-  /* Suggestion Cards */
-  --card-bg: rgba(255, 255, 255, 0.85);
-  --card-bg-hover: #ffffff;
-  --card-border: rgba(16, 185, 129, 0.25);
-  --card-border-hover: #10b981;
-  --card-shadow: 0 6px 20px rgba(4, 46, 31, 0.06);
-  --card-shadow-hover: 0 10px 28px rgba(4, 46, 31, 0.1), 0 0 20px rgba(16, 185, 129, 0.18);
-  --card-title: #042e1f;
-  --card-desc: #235844;
-  --card-icon-bg: rgba(16, 185, 129, 0.14);
-  --card-icon-border: rgba(16, 185, 129, 0.35);
-  --card-icon-color: #059669;
-
-  /* Capsule Composer */
-  --composer-bg: rgba(255, 255, 255, 0.95);
-  --composer-border: rgba(16, 185, 129, 0.3);
-  --composer-border-focus: #10b981;
-  --composer-shadow: 0 12px 32px rgba(4, 46, 31, 0.08), 0 0 25px rgba(16, 185, 129, 0.1);
-  --composer-shadow-focus: 0 14px 36px rgba(4, 46, 31, 0.12), 0 0 35px rgba(16, 185, 129, 0.2);
-  --composer-input-color: #042e1f;
-  --composer-placeholder: #527a69;
-  --tool-btn-bg: rgba(16, 185, 129, 0.08);
-  --tool-btn-border: rgba(16, 185, 129, 0.2);
-  --tool-btn-color: #064e3b;
-
-  /* User Greeting & Status Pills */
-  --pill-bg: rgba(255, 255, 255, 0.9);
-  --pill-border: rgba(16, 185, 129, 0.25);
-  --pill-text: #042e1f;
-
-  /* Circular Glowing Action Button */
-  --glowing-btn-bg: radial-gradient(circle at 35% 30%, #34d399, #059669);
-  --glowing-btn-color: #ffffff;
-  --glowing-btn-shadow: 0 0 16px rgba(16, 185, 129, 0.5), 0 4px 12px rgba(5, 150, 105, 0.25);
-  --glowing-btn-shadow-hover: 0 0 24px rgba(16, 185, 129, 0.7), 0 6px 16px rgba(5, 150, 105, 0.35);
-
-  /* Chat Messages */
-  --user-bubble-bg: linear-gradient(135deg, #059669 0%, #10b981 100%);
-  --user-bubble-color: #ffffff;
-  --user-bubble-shadow: 0 4px 16px rgba(16, 185, 129, 0.3), 0 1px 3px rgba(0, 0, 0, 0.1);
-  --assistant-text: #072a1e;
-  --assistant-dot-bg: rgba(16, 185, 129, 0.15);
-  --assistant-dot-border: rgba(16, 185, 129, 0.35);
-
-  /* New Chat & Assistant Response Container Tokens (Light Theme) */
-  --new-chat-bg: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(5, 150, 105, 0.1));
-  --new-chat-border: rgba(16, 185, 129, 0.25);
-  --response-card-bg: var(--new-chat-bg);
-  --response-card-border: var(--new-chat-border);
-  --response-header-title: #059669;
-  --response-card-shadow: 0 4px 20px rgba(4, 46, 31, 0.06), 0 0 12px rgba(16, 185, 129, 0.12);
-
-  --code-block-bg: rgba(236, 253, 245, 0.95);
-  --code-block-border: rgba(16, 185, 129, 0.3);
-  --code-block-text: #042e1f;
-  --inline-code-bg: rgba(16, 185, 129, 0.12);
-  --inline-code-border: rgba(16, 185, 129, 0.3);
-  --inline-code-text: #047857;
-
-  /* Backend Waiting Card */
-  --backend-card-bg: rgba(255, 255, 255, 0.9);
-  --backend-card-border: rgba(16, 185, 129, 0.4);
-  --backend-card-title: #059669;
+  /* ── Sidebar Tokens ── */
+  --sidebar-bg: var(--bg-app);
+  --sidebar-active-item-bg: var(--secondary-surface);
+  --sidebar-active-accent: var(--primary-accent);
+  --sidebar-border: var(--border-color);
+  --sidebar-width: 260px;
+  --sidebar-collapsed: 68px;
 }
 
 *,
@@ -231,12 +117,12 @@ html, body {
   margin: 0;
   padding: 0;
   overflow: hidden;
-  font-family: var(--font-family);
+  font-family: var(--font-sans);
   background-color: var(--bg-app);
-  color: var(--text-primary);
+  color: var(--foreground);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  transition: background-color 0.3s ease, color 0.3s ease;
+  line-height: 1.5;
 }
 
 button {
@@ -255,33 +141,93 @@ input, textarea {
   color: inherit;
 }
 
+/* ── Tabular / Financial Numbers Utility ── */
+.font-mono,
+.tabular-nums,
+.financial-num {
+  font-family: var(--font-mono) !important;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Financial Tables Presentation ── */
+.table-container {
+  width: 100%;
+  overflow-x: auto;
+  margin: 12px 0;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-card);
+  background: var(--card-surface);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.875rem;
+
+  th {
+    background: var(--secondary-surface);
+    color: var(--text-secondary);
+    font-weight: 600;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-color);
+    white-space: nowrap;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--foreground);
+    vertical-align: middle;
+  }
+
+  tr:last-child td {
+    border-bottom: none;
+  }
+
+  tr:hover td {
+    background: oklch(0.985 0.003 260);
+  }
+
+  td.numeric,
+  th.numeric {
+    text-align: right;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
 /* ── Global Keyframes ── */
 @keyframes fadeInScale {
-  from { opacity: 0; transform: scale(0.97); }
+  from { opacity: 0; transform: scale(0.98); }
   to { opacity: 1; transform: scale(1); }
 }
 
 @keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(14px); }
+  from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes pulse {
+@keyframes subtlePulse {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  50% { opacity: 0.45; }
 }
 
-/* Custom Scrollbar */
+/* Custom Clean Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(16, 185, 129, 0.25);
+  background: oklch(0.85 0.01 260);
   border-radius: 999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(16, 185, 129, 0.5);
+  background: oklch(0.7 0.02 265);
 }
