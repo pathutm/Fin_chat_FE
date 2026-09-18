@@ -1,7 +1,8 @@
-import { Component, inject } from '@angular/core';
+import { Component, inject, signal, computed, effect, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ChatService } from '../../../core/services/chat.service';
+import { MarkdownFormatterService } from '../../../core/utils/markdown-formatter.util';
 
 @Component({
   selector: 'app-chat-thread-view',
@@ -63,28 +64,71 @@ import { ChatService } from '../../../core/services/chat.service';
                 </div>
               </div>
             } @else {
-              <!-- Assistant Message: Dot Icon + Clean Typography -->
+              <!-- Assistant Message: Dark-Green Response Container -->
               <div class="message-row assistant-row">
                 <div class="assistant-dot-icon">
                   <div class="dot-inner"></div>
                 </div>
                 <div class="assistant-content">
-                  <p class="assistant-text">{{ msg.content }}</p>
-                  @if (msg.agent) {
-                    <span class="assistant-agent-meta">{{ getAgentLabel(msg.agent) }}</span>
-                  }
+                  <div class="assistant-card-container">
+                    <!-- Container Header -->
+                    <div class="assistant-card-header">
+                      <div class="card-title-group">
+                        <svg class="sparkle-icon" viewBox="0 0 24 24" width="13" height="13" fill="currentColor">
+                          <path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2 12L9.6 9.6L12 2Z" />
+                        </svg>
+                        <span class="card-title">FinAI Response</span>
+                      </div>
+                      <button
+                        class="copy-btn"
+                        [class.copied]="copiedMessageId() === msg.id"
+                        (click)="copyResponseText(msg.content, msg.id)"
+                        title="Copy response to clipboard"
+                      >
+                        @if (copiedMessageId() === msg.id) {
+                          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                          <span>Copied</span>
+                        } @else {
+                          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                          </svg>
+                          <span>Copy</span>
+                        }
+                      </button>
+                    </div>
+
+                    <!-- Container Body: Markdown Content -->
+                    <div class="assistant-markdown-content" [innerHTML]="markdownFormatter.formatMarkdown(msg.content)"></div>
+
+                    @if (msg.agent) {
+                      <div class="assistant-card-footer">
+                        <span class="assistant-agent-meta">{{ getAgentLabel(msg.agent) }}</span>
+                      </div>
+                    }
+                  </div>
                 </div>
               </div>
             }
           }
 
-          <!-- Clean Backend Awaiting Indicator (UI Only - Ready for API) -->
+          <!-- Polished Enterprise AI Processing Indicator -->
           @if (chatService.isAwaitingBackend()) {
-            <div class="backend-waiting-card">
-              <div class="waiting-spinner"></div>
-              <div class="waiting-details">
-                <span class="waiting-title">Request sent to backend API</span>
-                <span class="waiting-endpoint">Endpoint: <code>POST http://127.0.0.1:8000/chat</code></span>
+            <div class="message-row assistant-row loading-row">
+              <div class="assistant-dot-icon glowing-dot-pulse">
+                <div class="dot-inner"></div>
+              </div>
+              <div class="loading-status-card">
+                <div class="loading-header">
+                  <span class="loading-status-text">{{ currentLoadingStatus() }}</span>
+                  <div class="loading-typing-dots">
+                    <span class="dot"></span>
+                    <span class="dot"></span>
+                    <span class="dot"></span>
+                  </div>
+                </div>
               </div>
             </div>
           }
@@ -336,76 +380,256 @@ import { ChatService } from '../../../core/services/chat.service';
 
     .assistant-content {
       flex: 1;
-      max-width: 85%;
-      padding: 6px 0;
+      max-width: 88%;
+      padding: 2px 0;
     }
 
-    .assistant-text {
-      color: var(--assistant-text);
+    /* ── Assistant Response Dark-Green Container ── */
+    .assistant-card-container {
+      background: var(--response-card-bg, var(--new-chat-bg));
+      border: 1px solid var(--response-card-border, var(--new-chat-border));
+      border-radius: 16px;
+      padding: 16px 22px;
+      box-shadow: var(--response-card-shadow, 0 4px 24px rgba(0, 0, 0, 0.3));
+      backdrop-filter: blur(12px);
+      transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .assistant-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid rgba(16, 185, 129, 0.15);
+    }
+
+    .card-title-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--response-header-title, #34d399);
+      font-size: 0.82rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+
+    .sparkle-icon {
+      color: var(--response-header-title, #34d399);
+      filter: drop-shadow(0 0 6px rgba(16, 185, 129, 0.4));
+    }
+
+    .copy-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      background: var(--tool-btn-bg, rgba(255, 255, 255, 0.06));
+      border: 1px solid var(--tool-btn-border, rgba(255, 255, 255, 0.1));
+      color: var(--text-secondary, #94a3b8);
+      font-size: 0.76rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+
+      &:hover {
+        background: rgba(16, 185, 129, 0.14);
+        color: var(--response-header-title, #34d399);
+        border-color: rgba(16, 185, 129, 0.35);
+      }
+
+      &.copied {
+        background: rgba(16, 185, 129, 0.22);
+        color: var(--response-header-title, #34d399);
+        border-color: #10b981;
+        box-shadow: 0 0 8px rgba(16, 185, 129, 0.3);
+      }
+    }
+
+    .assistant-card-footer {
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px dashed rgba(16, 185, 129, 0.15);
+    }
+
+    /* ── Structured Assistant Markdown Formatting ── */
+    ::ng-deep .assistant-markdown-content {
+      color: var(--text-primary);
       font-size: 0.95rem;
-      line-height: 1.6;
+      line-height: 1.65;
       letter-spacing: -0.01em;
-      transition: color 0.3s ease;
+
+      p {
+        margin: 0 0 12px 0;
+        color: var(--text-primary);
+
+        &:last-child {
+          margin-bottom: 0;
+        }
+      }
+
+      h1, h2, h3, h4, h5, h6 {
+        margin: 18px 0 10px 0;
+        font-weight: 600;
+        color: var(--headline-color);
+        letter-spacing: -0.02em;
+
+        &:first-child {
+          margin-top: 0;
+        }
+      }
+
+      h1, h2, h3 {
+        font-size: 1.08rem;
+        color: var(--response-header-title, #34d399);
+      }
+
+      h4, h5, h6 {
+        font-size: 0.98rem;
+        color: var(--headline-color);
+      }
+
+      ul, ol {
+        margin: 8px 0 14px 0;
+        padding-left: 22px;
+        color: var(--text-primary);
+      }
+
+      li {
+        margin-bottom: 6px;
+        color: var(--text-primary);
+
+        &:last-child {
+          margin-bottom: 0;
+        }
+      }
+
+      pre {
+        background: var(--code-block-bg, rgba(15, 23, 42, 0.6));
+        border: 1px solid var(--code-block-border, rgba(16, 185, 129, 0.25));
+        border-radius: 10px;
+        padding: 14px 18px;
+        margin: 14px 0;
+        overflow-x: auto;
+        font-family: 'Fira Code', 'Consolas', monospace;
+        font-size: 0.88rem;
+        color: var(--code-block-text, #e2e8f0);
+
+        code {
+          background: transparent;
+          padding: 0;
+          border-radius: 0;
+          color: inherit;
+          font-family: inherit;
+          font-size: inherit;
+        }
+      }
+
+      code {
+        background: var(--inline-code-bg, rgba(16, 185, 129, 0.14));
+        color: var(--inline-code-text, #34d399);
+        border: 1px solid var(--inline-code-border, rgba(16, 185, 129, 0.2));
+        padding: 2px 6px;
+        border-radius: 5px;
+        font-family: 'Fira Code', 'Consolas', monospace;
+        font-size: 0.88rem;
+      }
+
+      blockquote {
+        border-left: 3px solid #10b981;
+        margin: 12px 0;
+        padding: 6px 0 6px 14px;
+        color: var(--text-muted);
+        font-style: italic;
+        background: rgba(16, 185, 129, 0.05);
+        border-radius: 0 6px 6px 0;
+      }
+
+      hr {
+        border: none;
+        border-top: 1px solid var(--topbar-border, rgba(16, 185, 129, 0.2));
+        margin: 16px 0;
+      }
     }
 
     .assistant-agent-meta {
       display: inline-block;
-      margin-top: 6px;
+      margin-top: 8px;
       font-size: 0.74rem;
       color: var(--text-muted);
     }
 
-    /* ── Backend Indicator ── */
-    .backend-waiting-card {
-      display: flex;
+    /* ── Polished Enterprise AI Processing Indicator ── */
+    .loading-row {
+      margin-top: 4px;
+      animation: fadeInUp 300ms ease;
+    }
+
+    .glowing-dot-pulse {
+      animation: pulseGlow 2s ease-in-out infinite;
+    }
+
+    @keyframes pulseGlow {
+      0%, 100% {
+        box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
+        border-color: rgba(16, 185, 129, 0.3);
+      }
+      50% {
+        box-shadow: 0 0 18px rgba(16, 185, 129, 0.8);
+        border-color: rgba(16, 185, 129, 0.6);
+      }
+    }
+
+    .loading-status-card {
+      display: inline-flex;
       align-items: center;
-      gap: 14px;
-      padding: 12px 18px;
+      gap: 12px;
+      padding: 10px 18px;
       border-radius: 14px;
-      background: var(--backend-card-bg);
-      border: 1px dashed var(--backend-card-border);
-      max-width: 480px;
-      align-self: flex-start;
-      margin-top: 6px;
-      animation: fadeInScale 300ms ease;
+      background: var(--response-card-bg, var(--new-chat-bg));
+      border: 1px solid var(--response-card-border, var(--new-chat-border));
+      backdrop-filter: blur(16px);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
       transition: all 0.3s ease;
     }
 
-    .waiting-spinner {
-      width: 18px;
-      height: 18px;
-      border: 2px solid rgba(16, 185, 129, 0.2);
-      border-top-color: #10b981;
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-    }
-
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-
-    .waiting-details {
+    .loading-header {
       display: flex;
-      flex-direction: column;
-      gap: 2px;
+      align-items: center;
+      gap: 10px;
     }
 
-    .waiting-title {
-      font-size: 0.82rem;
-      font-weight: 600;
-      color: var(--backend-card-title);
+    .loading-status-text {
+      font-size: 0.88rem;
+      font-weight: 500;
+      color: var(--headline-color, #e2e8f0);
+      letter-spacing: -0.01em;
+      transition: opacity 0.3s ease;
     }
 
-    .waiting-endpoint {
-      font-size: 0.74rem;
-      color: var(--text-muted);
+    .loading-typing-dots {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
 
-      code {
-        color: var(--text-primary);
-        background: var(--tool-btn-bg);
-        padding: 2px 5px;
-        border-radius: 4px;
-      }
+    .loading-typing-dots .dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: #34d399;
+      opacity: 0.4;
+      animation: dotPulse 1.4s infinite ease-in-out;
+    }
+
+    .loading-typing-dots .dot:nth-child(1) { animation-delay: 0s; }
+    .loading-typing-dots .dot:nth-child(2) { animation-delay: 0.2s; }
+    .loading-typing-dots .dot:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes dotPulse {
+      0%, 80%, 100% { transform: scale(0.8); opacity: 0.3; }
+      40% { transform: scale(1.3); opacity: 1; box-shadow: 0 0 6px #34d399; }
     }
 
     /* ── Floating Capsule Composer ── */
@@ -472,9 +696,89 @@ import { ChatService } from '../../../core/services/chat.service';
     }
   `],
 })
-export class ChatThreadViewComponent {
+export class ChatThreadViewComponent implements OnDestroy {
   readonly chatService = inject(ChatService);
+  readonly markdownFormatter = inject(MarkdownFormatterService);
   inputText = '';
+
+  private readonly loadingSteps = [
+    'Processing your request...',
+    'Understanding your request...',
+    'Analyzing the information...',
+    'Preparing your response...',
+  ];
+
+  readonly currentStepIndex = signal(0);
+  readonly currentLoadingStatus = computed(() => this.loadingSteps[this.currentStepIndex()]);
+  private loadingInterval: any = null;
+
+  constructor() {
+    effect(() => {
+      if (this.chatService.isAwaitingBackend()) {
+        this.startLoadingRotation();
+      } else {
+        this.stopLoadingRotation();
+      }
+    });
+  }
+
+  private startLoadingRotation(): void {
+    this.currentStepIndex.set(0);
+    this.stopLoadingRotation();
+    this.loadingInterval = setInterval(() => {
+      this.currentStepIndex.update((idx) => (idx + 1) % this.loadingSteps.length);
+    }, 2200);
+  }
+
+  private stopLoadingRotation(): void {
+    if (this.loadingInterval) {
+      clearInterval(this.loadingInterval);
+      this.loadingInterval = null;
+    }
+  }
+
+  ngOnDestroy(): void {
+    this.stopLoadingRotation();
+  }
+
+  readonly copiedMessageId = signal<string | null>(null);
+
+  copyResponseText(text: string, msgId: string): void {
+    if (!text) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => {
+        this.setCopiedState(msgId);
+      }).catch(() => {
+        this.fallbackCopyText(text, msgId);
+      });
+    } else {
+      this.fallbackCopyText(text, msgId);
+    }
+  }
+
+  private fallbackCopyText(text: string, msgId: string): void {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      document.execCommand('copy');
+      this.setCopiedState(msgId);
+    } finally {
+      document.body.removeChild(textarea);
+    }
+  }
+
+  private setCopiedState(msgId: string): void {
+    this.copiedMessageId.set(msgId);
+    setTimeout(() => {
+      if (this.copiedMessageId() === msgId) {
+        this.copiedMessageId.set(null);
+      }
+    }, 1800);
+  }
 
   getAgentLabel(agent?: string): string {
     if (!agent) return '';
@@ -488,3 +792,5 @@ export class ChatThreadViewComponent {
     this.inputText = '';
   }
 }
+
+

@@ -31,23 +31,6 @@ import { ChatService } from '../../../core/services/chat.service';
           />
 
           <div class="composer-bottom-bar">
-            <!-- Left Controls: Plus Button & Model Pill -->
-            <div class="bottom-left">
-              <button class="tool-circle-btn" title="Add attachments or data source">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2">
-                  <line x1="12" y1="5" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
-              </button>
-
-              <div class="model-pill">
-                <span class="model-label">{{ chatService.selectedModel() }}</span>
-                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5">
-                  <path d="M6 9l6 6 6-6" />
-                </svg>
-              </div>
-            </div>
-
             <!-- Right Controls: Glowing Emerald Circular Button -->
             <button
               class="glowing-action-btn"
@@ -164,51 +147,7 @@ import { ChatService } from '../../../core/services/chat.service';
     .composer-bottom-bar {
       display: flex;
       align-items: center;
-      justify-content: space-between;
-    }
-
-    .bottom-left {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .tool-circle-btn {
-      width: 34px;
-      height: 34px;
-      border-radius: 50%;
-      background: var(--tool-btn-bg);
-      border: 1px solid var(--tool-btn-border);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: var(--tool-btn-color);
-      transition: all 0.2s ease;
-
-      &:hover {
-        background: rgba(16, 185, 129, 0.2);
-        color: #10b981;
-      }
-    }
-
-    .model-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 6px 14px;
-      border-radius: 999px;
-      background: var(--tool-btn-bg);
-      border: 1px solid var(--tool-btn-border);
-      color: var(--text-primary);
-      font-size: 0.82rem;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.2s ease;
-
-      &:hover {
-        background: rgba(16, 185, 129, 0.15);
-        border-color: rgba(16, 185, 129, 0.4);
-      }
+      justify-content: flex-end;
     }
 
     /* ── Glowing Emerald Circular Button ── */

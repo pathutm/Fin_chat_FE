@@ -159,18 +159,18 @@ import { ChatService } from '../../core/services/chat.service';
       justify-content: center;
       gap: 8px;
       padding: 10px 16px;
-      border-radius: var(--radius-md);
-      background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(5, 150, 105, 0.1));
-      border: 1px solid rgba(16, 185, 129, 0.2);
-      color: var(--emerald-400);
+      border-radius: var(--radius-md, 10px);
+      background: var(--new-chat-bg);
+      border: 1px solid var(--new-chat-border);
+      color: var(--text-primary);
       font-weight: 500;
       font-size: 0.875rem;
-      transition: all var(--transition-fast);
+      transition: all var(--transition-fast, 0.2s);
 
       &:hover {
-        background: linear-gradient(135deg, rgba(16, 185, 129, 0.25), rgba(5, 150, 105, 0.2));
+        background: var(--new-chat-hover-bg, rgba(16, 185, 129, 0.2));
         border-color: rgba(16, 185, 129, 0.4);
-        box-shadow: var(--glow-sm);
+        box-shadow: var(--glow-sm, 0 0 10px rgba(16, 185, 129, 0.3));
       }
     }
 

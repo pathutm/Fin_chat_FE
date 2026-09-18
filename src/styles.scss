@@ -96,6 +96,21 @@
   --assistant-dot-bg: rgba(16, 185, 129, 0.15);
   --assistant-dot-border: rgba(16, 185, 129, 0.3);
 
+  /* New Chat & Assistant Response Container Tokens (Dark Theme) */
+  --new-chat-bg: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(5, 150, 105, 0.1));
+  --new-chat-border: rgba(16, 185, 129, 0.2);
+  --response-card-bg: var(--new-chat-bg);
+  --response-card-border: var(--new-chat-border);
+  --response-header-title: #34d399;
+  --response-card-shadow: 0 4px 24px rgba(0, 0, 0, 0.35), 0 0 14px rgba(16, 185, 129, 0.08);
+
+  --code-block-bg: rgba(15, 23, 42, 0.7);
+  --code-block-border: rgba(16, 185, 129, 0.25);
+  --code-block-text: #e2e8f0;
+  --inline-code-bg: rgba(16, 185, 129, 0.14);
+  --inline-code-border: rgba(16, 185, 129, 0.2);
+  --inline-code-text: #34d399;
+
   /* Backend Waiting Card */
   --backend-card-bg: rgba(6, 26, 18, 0.55);
   --backend-card-border: rgba(16, 185, 129, 0.35);
@@ -180,6 +195,21 @@ body.light-theme {
   --assistant-text: #072a1e;
   --assistant-dot-bg: rgba(16, 185, 129, 0.15);
   --assistant-dot-border: rgba(16, 185, 129, 0.35);
+
+  /* New Chat & Assistant Response Container Tokens (Light Theme) */
+  --new-chat-bg: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(5, 150, 105, 0.1));
+  --new-chat-border: rgba(16, 185, 129, 0.25);
+  --response-card-bg: var(--new-chat-bg);
+  --response-card-border: var(--new-chat-border);
+  --response-header-title: #059669;
+  --response-card-shadow: 0 4px 20px rgba(4, 46, 31, 0.06), 0 0 12px rgba(16, 185, 129, 0.12);
+
+  --code-block-bg: rgba(236, 253, 245, 0.95);
+  --code-block-border: rgba(16, 185, 129, 0.3);
+  --code-block-text: #042e1f;
+  --inline-code-bg: rgba(16, 185, 129, 0.12);
+  --inline-code-border: rgba(16, 185, 129, 0.3);
+  --inline-code-text: #047857;
 
   /* Backend Waiting Card */
   --backend-card-bg: rgba(255, 255, 255, 0.9);

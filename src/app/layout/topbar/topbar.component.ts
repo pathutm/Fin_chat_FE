@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { ChatService } from '../../core/services/chat.service';
 import { ThemeService } from '../../core/services/theme.service';
 import { AuthService } from '../../core/services/auth.service';
+import { AvatarService } from '../../core/utils/avatar.util';
 import { SNS_SQUARE_LOGO } from '../../core/constants/assets';
 
 @Component({
@@ -94,10 +95,10 @@ import { SNS_SQUARE_LOGO } from '../../core/constants/assets';
         <!-- User Profile Area -->
         @if (authService.currentUser()) {
           <div class="user-profile-area">
+            <div class="user-avatar-container" [innerHTML]="avatarService.getSanitizedAvatar(authService.currentUser()?.id)"></div>
             <div class="user-info">
-              <span class="user-name">{{ authService.displayName() || authService.currentUser()?.displayName || 'User' }}</span>
+              <span class="user-name">{{ getUserDisplayName() }}</span>
             </div>
-            <img [src]="authService.currentUser()?.photoURL || 'assets/default-avatar.png'" alt="User Profile" class="user-avatar" />
             <button class="logout-btn" (click)="authService.logout()" title="Logout">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
@@ -277,32 +278,31 @@ import { SNS_SQUARE_LOGO } from '../../core/constants/assets';
     .user-profile-area {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 10px;
       padding-left: 12px;
       margin-left: 4px;
       border-left: 1px solid var(--topbar-border);
     }
 
+    .user-avatar-container {
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
     .user-info {
       display: flex;
       flex-direction: column;
-      align-items: flex-end;
+      align-items: flex-start;
     }
 
     .user-name {
       font-size: 0.85rem;
       font-weight: 600;
       color: var(--headline-color);
-    }
-
-
-    .user-avatar {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      object-fit: cover;
-      border: 1px solid var(--topbar-border);
-      background-color: var(--pill-bg);
     }
 
     .logout-btn {
@@ -336,5 +336,25 @@ export class TopbarComponent {
   readonly chatService = inject(ChatService);
   readonly themeService = inject(ThemeService);
   readonly authService = inject(AuthService);
+  readonly avatarService = inject(AvatarService);
   readonly logoUrl = SNS_SQUARE_LOGO;
+
+  getUserDisplayName(): string {
+    const custom = this.authService.displayName();
+    if (custom && custom.trim()) return custom.trim();
+
+    const user = this.authService.currentUser();
+    if (!user) return 'User';
+
+    if (user.displayName && !user.displayName.includes('@')) {
+      return user.displayName;
+    }
+
+    if (user.email) {
+      return user.email.split('@')[0];
+    }
+
+    return 'User';
+  }
 }
+

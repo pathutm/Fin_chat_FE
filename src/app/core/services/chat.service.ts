@@ -276,11 +276,19 @@ export class ChatService {
   sendUserMessage(text: string): void {
     if (!text.trim()) return;
 
+    // If we are sending from home view AND the current active conversation already contains messages,
+    // generate a brand new conversation ID for this new chat.
     let convId = this.activeConversationId();
-    if (!convId) {
+    if (this.currentView() === 'home' && (this.messages().length > 0 || !convId)) {
+      convId = this.generateConversationId();
+      this.activeConversationId.set(convId);
+      this.messages.set([]);
+    } else if (!convId) {
       convId = this.generateConversationId();
       this.activeConversationId.set(convId);
     }
+
+    const targetConvId = convId;
 
     const userMsg: ChatMessage = {
       id: `msg-${Date.now()}`,
@@ -289,18 +297,19 @@ export class ChatService {
       timestamp: new Date(),
     };
 
+    // Append user message to active view
     this.messages.update((msgs) => [...msgs, userMsg]);
     this.currentView.set('chat');
     this.isAwaitingBackend.set(true);
     this.isTyping.set(true);
 
-    // Persist after user message
+    // Persist user message to storage for targetConvId
     this.persistCurrentConversation();
-    try { localStorage.setItem(this.activeKey, convId); } catch { /* ignore */ }
+    try { localStorage.setItem(this.activeKey, targetConvId); } catch { /* ignore */ }
 
     const payload: ChatRequest = {
       message: userMsg.content,
-      conversation_id: convId,
+      conversation_id: targetConvId,
       user_name: this.authService.displayName() || null,
       user_id: this.authService.currentUser()?.id || null,
     };
@@ -313,11 +322,16 @@ export class ChatService {
         agent: data.agent,
         timestamp: new Date(),
       };
-      this.messages.update((msgs) => [...msgs, assistantMsg]);
-      this.isAwaitingBackend.set(false);
-      this.isTyping.set(false);
-      // Persist after assistant response
-      this.persistCurrentConversation();
+
+      // 1. Update stored conversation entry for targetConvId in localStorage
+      this.saveAssistantMessageToTargetConv(targetConvId, assistantMsg);
+
+      // 2. Only update active view if the user is STILL viewing targetConvId (Race-condition protection)
+      if (this.activeConversationId() === targetConvId) {
+        this.messages.update((msgs) => [...msgs, assistantMsg]);
+        this.isAwaitingBackend.set(false);
+        this.isTyping.set(false);
+      }
     };
 
     const handleError = (err: unknown) => {
@@ -326,15 +340,18 @@ export class ChatService {
         id: `msg-${Date.now()}`,
         role: 'assistant',
         content:
-          'Unable to connect to the backend server. Please make sure the backend is running at http://127.0.0.1:8000.',
+          'Unable to connect to the assistant service. Please verify your connection and try again.',
         agent: 'System',
         timestamp: new Date(),
       };
-      this.messages.update((msgs) => [...msgs, errorMsg]);
-      this.isAwaitingBackend.set(false);
-      this.isTyping.set(false);
-      // Still persist so the user message is not lost
-      this.persistCurrentConversation();
+
+      this.saveAssistantMessageToTargetConv(targetConvId, errorMsg);
+
+      if (this.activeConversationId() === targetConvId) {
+        this.messages.update((msgs) => [...msgs, errorMsg]);
+        this.isAwaitingBackend.set(false);
+        this.isTyping.set(false);
+      }
     };
 
     // HTTP POST — fallback to dev proxy on CORS block (status 0)
@@ -352,5 +369,33 @@ export class ChatService {
         }
       },
     });
+  }
+
+  /** Helper to safely persist assistant response directly to a target conversation entry in storage */
+  private saveAssistantMessageToTargetConv(targetConvId: string, assistantMsg: ChatMessage): void {
+    const stored = this.loadStoredConversations();
+    const idx = stored.findIndex((c) => c.id === targetConvId);
+    const now = new Date().toISOString();
+
+    if (idx >= 0) {
+      const existingMsgs = stored[idx].messages;
+      stored[idx] = {
+        ...stored[idx],
+        messages: [...existingMsgs, this.toStoredMessage(assistantMsg)],
+        updatedAt: now,
+      };
+    } else {
+      stored.push({
+        id: targetConvId,
+        title: 'New conversation',
+        messages: [this.toStoredMessage(assistantMsg)],
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    stored.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    this.saveStoredConversations(stored);
+    this.conversations.set(stored.map((sc) => this.toConversation(sc)));
   }
 }
