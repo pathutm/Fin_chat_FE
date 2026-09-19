@@ -51,7 +51,7 @@ import { ChatService } from '../../core/services/chat.service';
           <div class="section-label">Chat History</div>
           <div class="conv-list">
             @for (conv of chatService.conversations(); track conv.id) {
-              <button
+              <div
                 class="conv-item"
                 [class.active]="conv.id === chatService.activeConversationId()"
                 (click)="chatService.selectConversation(conv.id)"
@@ -60,7 +60,18 @@ import { ChatService } from '../../core/services/chat.service';
                   <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"></path>
                 </svg>
                 <span class="conv-title">{{ conv.title }}</span>
-              </button>
+                <button
+                  class="delete-conv-btn"
+                  (click)="onDeleteConversation($event, conv.id)"
+                  title="Delete conversation"
+                  aria-label="Delete conversation"
+                >
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                  </svg>
+                </button>
+              </div>
             }
           </div>
         </div>
@@ -202,6 +213,7 @@ import { ChatService } from '../../core/services/chat.service';
       transition: all 0.15s ease;
       text-align: left;
       border: 1px solid transparent;
+      cursor: pointer;
 
       svg {
         flex-shrink: 0;
@@ -211,6 +223,10 @@ import { ChatService } from '../../core/services/chat.service';
       &:hover {
         background: var(--secondary-surface);
         color: var(--foreground);
+
+        .delete-conv-btn {
+          opacity: 1;
+        }
       }
 
       &.active {
@@ -227,9 +243,31 @@ import { ChatService } from '../../core/services/chat.service';
     }
 
     .conv-title {
+      flex: 1;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+
+    .delete-conv-btn {
+      opacity: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 4px;
+      color: var(--muted-text);
+      transition: all 0.15s ease;
+      background: transparent;
+      border: none;
+      padding: 0;
+      cursor: pointer;
+
+      &:hover {
+        color: var(--color-destructive, #ef4444);
+        background: oklch(0.955 0.006 260);
+      }
     }
   `],
 })
@@ -243,5 +281,10 @@ export class SidebarComponent {
 
   onNewChat(): void {
     this.chatService.startNewConversation();
+  }
+
+  onDeleteConversation(event: MouseEvent, id: string): void {
+    event.stopPropagation();
+    this.chatService.deleteConversation(id);
   }
 }

@@ -205,13 +205,17 @@ export class ChatService {
 
     // Restore the last active conversation
     const lastActiveId = localStorage.getItem(this.activeKey);
-    const target = (lastActiveId ? stored.find((c) => c.id === lastActiveId) : null) ?? stored[0];
+    const target = lastActiveId ? stored.find((c) => c.id === lastActiveId) : null;
 
-    this.activeConversationId.set(target.id);
-    this.messages.set(target.messages.map((m) => this.fromStoredMessage(m)));
-
-    if (target.messages.length > 0) {
-      this.currentView.set('chat');
+    if (target) {
+      this.activeConversationId.set(target.id);
+      this.messages.set(target.messages.map((m) => this.fromStoredMessage(m)));
+      if (target.messages.length > 0) {
+        this.currentView.set('chat');
+      }
+    } else {
+      this.activeConversationId.set(lastActiveId || this.generateConversationId());
+      this.messages.set([]);
     }
   }
 
@@ -260,23 +264,36 @@ export class ChatService {
   }
 
   clearChat(): void {
-    const newId = this.generateConversationId();
-
-    // Remove old conversation from storage only if it was empty
     const convId = this.activeConversationId();
     if (convId) {
       const stored = this.loadStoredConversations();
-      const cleaned = stored.filter((c) => !(c.id === convId && c.messages.length === 0));
-      this.saveStoredConversations(cleaned);
-      this.conversations.set(cleaned.map((sc) => this.toConversation(sc)));
+      const idx = stored.findIndex((c) => c.id === convId);
+      if (idx >= 0) {
+        stored[idx] = {
+          ...stored[idx],
+          messages: [],
+          updatedAt: new Date().toISOString(),
+        };
+        this.saveStoredConversations(stored);
+        this.conversations.set(stored.map((sc) => this.toConversation(sc)));
+      }
     }
 
     this.messages.set([]);
     this.isAwaitingBackend.set(false);
     this.isTyping.set(false);
-    this.activeConversationId.set(newId);
+  }
 
-    try { localStorage.setItem(this.activeKey, newId); } catch { /* ignore */ }
+  deleteConversation(id: string): void {
+    if (!id) return;
+    const stored = this.loadStoredConversations();
+    const cleaned = stored.filter((c) => c.id !== id);
+    this.saveStoredConversations(cleaned);
+    this.conversations.set(cleaned.map((sc) => this.toConversation(sc)));
+
+    if (this.activeConversationId() === id) {
+      this.clearChat();
+    }
   }
 
   sendUserMessage(text: string): void {
@@ -298,8 +315,18 @@ export class ChatService {
 
     const targetConvId = convId;
 
+    // Create user message immediately so it stays visible in the chat stream during generation
+    const userMsg: ChatMessage = {
+      id: `msg-${Date.now()}-user`,
+      role: 'user',
+      content: rawUserText,
+      timestamp: new Date(),
+    };
+
+    // Append user message to active messages signal immediately
+    this.messages.update((msgs) => [...msgs, userMsg]);
+
     // Switch view to chat and show loading status immediately.
-    // DO NOT add the user message to this.messages() or storage yet (waits for backend response).
     this.currentView.set('chat');
     this.isAwaitingBackend.set(true);
     this.isTyping.set(true);
@@ -314,25 +341,10 @@ export class ChatService {
     };
 
     const handleSuccess = (data: ChatResponse) => {
-      let userMsg: ChatMessage;
-
       if (data.deleted) {
         // PII detected by backend: replacement deleted user message
-        userMsg = {
-          id: `msg-${Date.now()}-user`,
-          role: 'user',
-          content: `🗑️ Message deleted\n\nThis message was removed because it contained personal or sensitive information.\n\nPlease do not share personal or private information in this chat.`,
-          timestamp: new Date(),
-          deleted: true,
-        };
-      } else {
-        // Safe message: normal user message
-        userMsg = {
-          id: `msg-${Date.now()}-user`,
-          role: 'user',
-          content: rawUserText,
-          timestamp: new Date(),
-        };
+        userMsg.content = `🗑️ Message deleted\n\nThis message was removed because it contained personal or sensitive information.\n\nPlease do not share personal or private information in this chat.`;
+        userMsg.deleted = true;
       }
 
       const assistantMsg: ChatMessage = {
@@ -348,7 +360,11 @@ export class ChatService {
 
       // 2. Update active view if user is still viewing targetConvId
       if (this.activeConversationId() === targetConvId) {
-        this.messages.update((msgs) => [...msgs, userMsg, assistantMsg]);
+        this.messages.update((msgs) => {
+          const hasUserMsg = msgs.some((m) => m.id === userMsg.id);
+          const base = hasUserMsg ? msgs : [...msgs, userMsg];
+          return [...base, assistantMsg];
+        });
         this.isAwaitingBackend.set(false);
         this.isTyping.set(false);
       }
@@ -356,13 +372,6 @@ export class ChatService {
 
     const handleError = (err: unknown) => {
       console.error('Failed to communicate with backend:', err);
-
-      const userMsg: ChatMessage = {
-        id: `msg-${Date.now()}-user`,
-        role: 'user',
-        content: rawUserText,
-        timestamp: new Date(),
-      };
 
       const errorMsg: ChatMessage = {
         id: `msg-${Date.now()}-assistant`,
@@ -376,7 +385,11 @@ export class ChatService {
       this.savePairToTargetConv(targetConvId, userMsg, errorMsg);
 
       if (this.activeConversationId() === targetConvId) {
-        this.messages.update((msgs) => [...msgs, userMsg, errorMsg]);
+        this.messages.update((msgs) => {
+          const hasUserMsg = msgs.some((m) => m.id === userMsg.id);
+          const base = hasUserMsg ? msgs : [...msgs, userMsg];
+          return [...base, errorMsg];
+        });
         this.isAwaitingBackend.set(false);
         this.isTyping.set(false);
       }
