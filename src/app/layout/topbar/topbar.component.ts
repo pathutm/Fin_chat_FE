@@ -11,7 +11,11 @@ import { SNS_SQUARE_LOGO } from '../../core/constants/assets';
   imports: [CommonModule],
   template: `
     <header class="desktop-topbar">
-      <!-- Left: CFO Conversational Analytics Brand -->
+      <!-- Left: Company Logo & CFO Conversational Analytics Brand -->
+      <div class="org-logo-container" title="SNS Square — Redesigning Business">
+        <img [src]="logoUrl" alt="SNS Square Logo" class="org-logo-img" />
+      </div>
+
       <div class="brand-group" (click)="chatService.setView('home')">
         <div class="brand-icon-box">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2">
@@ -50,16 +54,11 @@ import { SNS_SQUARE_LOGO } from '../../core/constants/assets';
         </button>
       </nav>
 
-      <!-- Right: Model Pill, Organization Logo & User Profile -->
+      <!-- Right: Model Pill & User Profile -->
       <div class="topbar-right">
         <!-- Model Pill -->
         <div class="model-badge">
           <span>{{ chatService.selectedModel() }}</span>
-        </div>
-
-        <!-- Attached Company Logo (SNS Square) in Top-Right Header -->
-        <div class="org-logo-container" title="SNS Square — Redesigning Business">
-          <img [src]="logoUrl" alt="SNS Square Logo" class="org-logo-img" />
         </div>
 
         <!-- User Profile Area -->

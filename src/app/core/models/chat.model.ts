@@ -5,6 +5,7 @@ export interface ChatMessage {
   timestamp: Date;
   isTyping?: boolean;
   agent?: string;
+  deleted?: boolean;
 }
 
 export interface Conversation {

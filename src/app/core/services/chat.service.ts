@@ -15,6 +15,9 @@ export interface ChatRequest {
 export interface ChatResponse {
   response: string;
   agent?: string;
+  deleted?: boolean;
+  requires_confirmation?: boolean;
+  safe_finance_query?: string;
 }
 
 // Base keys, will be appended with user ID
@@ -28,6 +31,7 @@ interface StoredMessage {
   content: string;
   timestamp: string;
   agent?: string;
+  deleted?: boolean;
 }
 
 interface StoredConversation {
@@ -121,6 +125,7 @@ export class ChatService {
       content: msg.content,
       timestamp: msg.timestamp instanceof Date ? msg.timestamp.toISOString() : String(msg.timestamp),
       agent: msg.agent,
+      deleted: msg.deleted,
     };
   }
 
@@ -131,6 +136,7 @@ export class ChatService {
       content: sm.content,
       timestamp: new Date(sm.timestamp),
       agent: sm.agent,
+      deleted: sm.deleted,
     };
   }
 
@@ -276,6 +282,8 @@ export class ChatService {
   sendUserMessage(text: string): void {
     if (!text.trim()) return;
 
+    const rawUserText = text.trim();
+
     // If we are sending from home view AND the current active conversation already contains messages,
     // generate a brand new conversation ID for this new chat.
     let convId = this.activeConversationId();
@@ -290,45 +298,57 @@ export class ChatService {
 
     const targetConvId = convId;
 
-    const userMsg: ChatMessage = {
-      id: `msg-${Date.now()}`,
-      role: 'user',
-      content: text.trim(),
-      timestamp: new Date(),
-    };
-
-    // Append user message to active view
-    this.messages.update((msgs) => [...msgs, userMsg]);
+    // Switch view to chat and show loading status immediately.
+    // DO NOT add the user message to this.messages() or storage yet (waits for backend response).
     this.currentView.set('chat');
     this.isAwaitingBackend.set(true);
     this.isTyping.set(true);
 
-    // Persist user message to storage for targetConvId
-    this.persistCurrentConversation();
     try { localStorage.setItem(this.activeKey, targetConvId); } catch { /* ignore */ }
 
     const payload: ChatRequest = {
-      message: userMsg.content,
+      message: rawUserText,
       conversation_id: targetConvId,
       user_name: this.authService.displayName() || null,
       user_id: this.authService.currentUser()?.id || null,
     };
 
     const handleSuccess = (data: ChatResponse) => {
+      let userMsg: ChatMessage;
+
+      if (data.deleted) {
+        // PII detected by backend: replacement deleted user message
+        userMsg = {
+          id: `msg-${Date.now()}-user`,
+          role: 'user',
+          content: `🗑️ Message deleted\n\nThis message was removed because it contained personal or sensitive information.\n\nPlease do not share personal or private information in this chat.`,
+          timestamp: new Date(),
+          deleted: true,
+        };
+      } else {
+        // Safe message: normal user message
+        userMsg = {
+          id: `msg-${Date.now()}-user`,
+          role: 'user',
+          content: rawUserText,
+          timestamp: new Date(),
+        };
+      }
+
       const assistantMsg: ChatMessage = {
-        id: `msg-${Date.now()}`,
+        id: `msg-${Date.now()}-assistant`,
         role: 'assistant',
         content: data.response,
         agent: data.agent,
         timestamp: new Date(),
       };
 
-      // 1. Update stored conversation entry for targetConvId in localStorage
-      this.saveAssistantMessageToTargetConv(targetConvId, assistantMsg);
+      // 1. Save userMsg and assistantMsg to target conversation entry in localStorage
+      this.savePairToTargetConv(targetConvId, userMsg, assistantMsg);
 
-      // 2. Only update active view if the user is STILL viewing targetConvId (Race-condition protection)
+      // 2. Update active view if user is still viewing targetConvId
       if (this.activeConversationId() === targetConvId) {
-        this.messages.update((msgs) => [...msgs, assistantMsg]);
+        this.messages.update((msgs) => [...msgs, userMsg, assistantMsg]);
         this.isAwaitingBackend.set(false);
         this.isTyping.set(false);
       }
@@ -336,8 +356,16 @@ export class ChatService {
 
     const handleError = (err: unknown) => {
       console.error('Failed to communicate with backend:', err);
+
+      const userMsg: ChatMessage = {
+        id: `msg-${Date.now()}-user`,
+        role: 'user',
+        content: rawUserText,
+        timestamp: new Date(),
+      };
+
       const errorMsg: ChatMessage = {
-        id: `msg-${Date.now()}`,
+        id: `msg-${Date.now()}-assistant`,
         role: 'assistant',
         content:
           'Unable to connect to the assistant service. Please verify your connection and try again.',
@@ -345,10 +373,10 @@ export class ChatService {
         timestamp: new Date(),
       };
 
-      this.saveAssistantMessageToTargetConv(targetConvId, errorMsg);
+      this.savePairToTargetConv(targetConvId, userMsg, errorMsg);
 
       if (this.activeConversationId() === targetConvId) {
-        this.messages.update((msgs) => [...msgs, errorMsg]);
+        this.messages.update((msgs) => [...msgs, userMsg, errorMsg]);
         this.isAwaitingBackend.set(false);
         this.isTyping.set(false);
       }
@@ -371,24 +399,36 @@ export class ChatService {
     });
   }
 
-  /** Helper to safely persist assistant response directly to a target conversation entry in storage */
-  private saveAssistantMessageToTargetConv(targetConvId: string, assistantMsg: ChatMessage): void {
+  /** Helper to safely persist user and assistant messages to a target conversation entry in storage */
+  private savePairToTargetConv(targetConvId: string, userMsg: ChatMessage, assistantMsg: ChatMessage): void {
     const stored = this.loadStoredConversations();
     const idx = stored.findIndex((c) => c.id === targetConvId);
     const now = new Date().toISOString();
 
+    const newStoredMsgs = [this.toStoredMessage(userMsg), this.toStoredMessage(assistantMsg)];
+
     if (idx >= 0) {
       const existingMsgs = stored[idx].messages;
+      const firstUser = [...existingMsgs.map((m) => this.fromStoredMessage(m)), userMsg].find((m) => m.role === 'user');
+      const title = firstUser
+        ? (firstUser.deleted ? 'Protected Conversation' : (firstUser.content.slice(0, 40) + (firstUser.content.length > 40 ? '…' : '')))
+        : 'New conversation';
+
       stored[idx] = {
         ...stored[idx],
-        messages: [...existingMsgs, this.toStoredMessage(assistantMsg)],
+        title,
+        messages: [...existingMsgs, ...newStoredMsgs],
         updatedAt: now,
       };
     } else {
+      const title = userMsg.deleted
+        ? 'Protected Conversation'
+        : (userMsg.content.slice(0, 40) + (userMsg.content.length > 40 ? '…' : ''));
+
       stored.push({
         id: targetConvId,
-        title: 'New conversation',
-        messages: [this.toStoredMessage(assistantMsg)],
+        title,
+        messages: newStoredMsgs,
         createdAt: now,
         updatedAt: now,
       });

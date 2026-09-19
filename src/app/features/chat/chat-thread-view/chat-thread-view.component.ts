@@ -58,8 +58,23 @@ import { parseTrendData, TrendSeries } from '../../../core/utils/trend-parser.ut
             @if (msg.role === 'user') {
               <!-- User Message -->
               <div class="message-row user-row">
-                <div class="user-bubble">
-                  {{ msg.content }}
+                <div class="user-bubble" [class.deleted-user-bubble]="msg.deleted">
+                  @if (msg.deleted) {
+                    <div class="deleted-msg-card">
+                      <div class="deleted-msg-header">
+                        <span>🗑️</span>
+                        <span>Message deleted</span>
+                      </div>
+                      <div class="deleted-msg-body">
+                        This message was removed because it contained personal or sensitive information.
+                      </div>
+                      <div class="deleted-msg-footer">
+                        Please do not share personal or private information in this chat.
+                      </div>
+                    </div>
+                  } @else {
+                    {{ msg.content }}
+                  }
                 </div>
               </div>
             } @else {
@@ -312,6 +327,41 @@ import { parseTrendData, TrendSeries } from '../../../core/utils/trend-parser.ut
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
       word-break: break-word;
       white-space: pre-wrap;
+
+      &.deleted-user-bubble {
+        background: var(--card-surface, #ffffff);
+        border: 1px solid oklch(0.6 0.18 25 / 0.35);
+        color: var(--foreground, #1f2937);
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+        padding: 12px 16px;
+      }
+    }
+
+    .deleted-msg-card {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .deleted-msg-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 700;
+      font-size: 0.92rem;
+      color: oklch(0.55 0.22 25);
+    }
+
+    .deleted-msg-body {
+      font-size: 0.88rem;
+      color: var(--foreground, #374151);
+      line-height: 1.45;
+    }
+
+    .deleted-msg-footer {
+      font-size: 0.84rem;
+      color: var(--muted-text, #6b7280);
+      line-height: 1.4;
     }
 
     /* ── Assistant Response Container (oklch(1 0 0) white surface) ── */
