@@ -1,17 +1,30 @@
 export interface TrendDataPoint {
-  month: string;              // e.g. "January 2026"
-  shortMonth: string;         // e.g. "Jan 2026" or "Jan '26"
+  month: string;              // e.g. "January 2026" or "March 2023"
+  shortMonth: string;         // e.g. "Jan '26" or "Mar '23"
   rawAmount: string;          // e.g. "$31,073,919.57" (exact string preserved from response)
   amount: number;             // numeric for chart plotting e.g. 31073919.57
   currencySymbol: string;     // e.g. "$" or "₹" or "€"
   invoiceCount?: string;      // e.g. "1,245" or "1,245 invoices"
   invoiceCountNum?: number;   // numeric if available
   percentOfMax?: number;      // 0 to 100 relative to peak
+  year?: number;              // e.g. 2023, 2026
+  monthIndex?: number;        // 0-11
+  sortKey: number;            // e.g. 202303 for chronological ordering. Always assigned (1-indexed by position if year unknown)
+  pointIndex: number;         // original index in parsed order — always stable and unique
+}
+
+export interface YearPeriodOption {
+  id: string;                 // e.g. "2025-2026", "2023-2024", "all"
+  label: string;              // e.g. "2025–2026", "2023–2024", "All (42 Months)"
+  years: number[];            // e.g. [2025, 2026]
+  pointCount: number;
+  minPointIndex: number;      // inclusive: start index in full points array
+  maxPointIndex: number;      // inclusive: end index in full points array
 }
 
 export interface TrendSeries {
   title: string;
-  points: TrendDataPoint[];
+  points: TrendDataPoint[];   // full sorted dataset, never filtered
   currencySymbol: string;
   maxAmount: number;
   minAmount: number;
@@ -20,6 +33,8 @@ export interface TrendSeries {
   peakPoint: TrendDataPoint;
   lowestPoint: TrendDataPoint;
   hasInvoiceCount: boolean;
+  periodOptions: YearPeriodOption[];
+  defaultPeriodId: string;
 }
 
 const MONTH_NAMES = [
@@ -29,55 +44,269 @@ const MONTH_NAMES = [
 
 const MONTH_ABBRS = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Sept', 'Oct', 'Nov', 'Dec'
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
 ];
 
 const MONTH_REGEX = new RegExp(
-  `\\b(?:(?:${MONTH_NAMES.join('|')}|${MONTH_ABBRS.join('|')})\\s*['’]?(?:20\\d\\d|19\\d\\d|\\d\\d)?|(?:20\\d\\d|19\\d\\d)[-/](?:0?[1-9]|1[0-2])|(?:0?[1-9]|1[0-2])[-/](?:20\\d\\d|19\\d\\d)|Q[1-4]\\s*(?:20\\d\\d|\\d\\d)?)\\b`,
+  `\\b(?:(?:${MONTH_NAMES.join('|')}|${MONTH_ABBRS.join('|')})\\s*['']?(?:20\\d\\d|19\\d\\d|\\d\\d)?|(?:20\\d\\d|19\\d\\d)[-/.](?:0?[1-9]|1[0-2])|(?:0?[1-9]|1[0-2])[-/.](?:20\\d\\d|19\\d\\d)|(?:20\\d\\d)(?:0[1-9]|1[0-2])|Q[1-4]\\s*(?:20\\d\\d|\\d\\d)?)\\b`,
   'i'
 );
 
 /**
- * Clean up currency string and extract numerical value
+ * Clean up currency string and extract numerical value, supporting multipliers (M, B, K).
  */
 function parseNumericAmount(raw: string): number | null {
   if (!raw) return null;
-  // Match numbers with possible commas and decimals
   const match = raw.match(/[-+]?[0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]+)?|[-+]?[0-9]+(?:\.[0-9]+)?/);
   if (!match) return null;
-  const num = parseFloat(match[0].replace(/,/g, ''));
-  return isNaN(num) ? null : num;
+  let num = parseFloat(match[0].replace(/,/g, ''));
+  if (isNaN(num)) return null;
+
+  // Check for unit suffixes after the number (e.g. M, B, K, Million, Billion)
+  const afterNum = raw.slice(raw.indexOf(match[0]) + match[0].length).trim();
+  if (/^b(?:illion)?\b/i.test(afterNum)) {
+    num *= 1e9;
+  } else if (/^m(?:illion)?\b/i.test(afterNum)) {
+    num *= 1e6;
+  } else if (/^k(?:\b|(?=[^a-z]))/i.test(afterNum)) {
+    num *= 1e3;
+  }
+  return num;
 }
 
 /**
- * Extract currency symbol or prefix
+ * Extract currency symbol or prefix (returns ONLY valid currency symbols: $, ₹, €, £, ¥).
+ * Never returns words or month abbreviations.
  */
 function extractCurrencySymbol(raw: string): string {
   if (!raw) return '$';
   if (raw.includes('$')) return '$';
-  if (raw.includes('₹') || raw.toUpperCase().includes('INR')) return '₹';
-  if (raw.includes('€') || raw.toUpperCase().includes('EUR')) return '€';
-  if (raw.includes('£') || raw.toUpperCase().includes('GBP')) return '£';
-  if (raw.includes('¥')) return '¥';
-  const match = raw.match(/^([^\d\s,]+)/);
-  return match ? match[1].trim() : '$';
+  if (raw.includes('₹') || /\bINR\b/i.test(raw)) return '₹';
+  if (raw.includes('€') || /\bEUR\b/i.test(raw)) return '€';
+  if (raw.includes('£') || /\bGBP\b/i.test(raw)) return '£';
+  if (raw.includes('¥') || /\b(?:JPY|CNY)\b/i.test(raw)) return '¥';
+  return '$';
+}
+
+interface ParsedDateInfo {
+  year?: number;
+  monthIndex?: number;
+  displayMonth: string;
+  shortMonth: string;
+  /** Numeric sort key: YYYYMM when year is known, or 0 when unknown */
+  sortKey: number;
 }
 
 /**
- * Format month label into a clean short form for axis display
+ * Parse date label into structured year, month index, and clean display labels.
+ * Returns sortKey=0 when year cannot be extracted.
  */
-function formatShortMonth(label: string): string {
-  const trimmed = label.trim();
-  // If e.g. "January 2026", convert to "Jan '26" or "Jan 2026"
-  const parts = trimmed.split(/\s+/);
-  if (parts.length === 2) {
-    const m = parts[0];
-    const y = parts[1];
-    const shortM = m.slice(0, 3);
-    const shortY = y.length === 4 ? `'${y.slice(2)}` : y;
-    return `${shortM} ${shortY}`;
+export function parseDateInfo(label: string, fallbackYear?: number): ParsedDateInfo {
+  const clean = label.replace(/[*_`]/g, '').trim();
+
+  // 1. Match YYYY-MM, YYYY/MM, YYYY.MM, YYYY-MM-DD
+  const isoMatch = clean.match(/^(\d{4})[-/.](0?[1-9]|1[0-2])(?:[-/.]\d{1,2})?$/);
+  if (isoMatch) {
+    const year = parseInt(isoMatch[1], 10);
+    const mNum = parseInt(isoMatch[2], 10);
+    const mIdx = mNum - 1;
+    const shortM = MONTH_ABBRS[mIdx].slice(0, 3);
+    const fullM = MONTH_NAMES[mIdx];
+    return {
+      year, monthIndex: mIdx,
+      displayMonth: `${fullM} ${year}`,
+      shortMonth: `${shortM} '${String(year).slice(2)}`,
+      sortKey: year * 100 + mNum
+    };
   }
-  return trimmed;
+
+  // 2. Match 6-digit numeric YYYYMM e.g. "202303"
+  const yyyymmMatch = clean.match(/^(\d{4})(0[1-9]|1[0-2])$/);
+  if (yyyymmMatch) {
+    const year = parseInt(yyyymmMatch[1], 10);
+    const mNum = parseInt(yyyymmMatch[2], 10);
+    const mIdx = mNum - 1;
+    const shortM = MONTH_ABBRS[mIdx].slice(0, 3);
+    const fullM = MONTH_NAMES[mIdx];
+    return {
+      year, monthIndex: mIdx,
+      displayMonth: `${fullM} ${year}`,
+      shortMonth: `${shortM} '${String(year).slice(2)}`,
+      sortKey: year * 100 + mNum
+    };
+  }
+
+  // 3. Match MM-YYYY or MM/YYYY
+  const mmyyyyMatch = clean.match(/^(0?[1-9]|1[0-2])[-/.](\d{4})$/);
+  if (mmyyyyMatch) {
+    const mNum = parseInt(mmyyyyMatch[1], 10);
+    const year = parseInt(mmyyyyMatch[2], 10);
+    const mIdx = mNum - 1;
+    const shortM = MONTH_ABBRS[mIdx].slice(0, 3);
+    const fullM = MONTH_NAMES[mIdx];
+    return {
+      year, monthIndex: mIdx,
+      displayMonth: `${fullM} ${year}`,
+      shortMonth: `${shortM} '${String(year).slice(2)}`,
+      sortKey: year * 100 + mNum
+    };
+  }
+
+  // 4. Match Year first: "YYYY Month" e.g. "2025 January", "2025-Jan", "2025/Sep"
+  const yearFirstMatch = clean.match(
+    new RegExp(`^(\\d{4})\\s*[-/.,]?\\s*(${MONTH_NAMES.join('|')}|${MONTH_ABBRS.join('|')})`, 'i')
+  );
+  if (yearFirstMatch) {
+    const year = parseInt(yearFirstMatch[1], 10);
+    const namePart = yearFirstMatch[2].toLowerCase();
+    let mIdx = MONTH_NAMES.findIndex(n => n.toLowerCase().startsWith(namePart.slice(0, 3)));
+    if (mIdx === -1) {
+      mIdx = MONTH_ABBRS.findIndex(a => a.toLowerCase().startsWith(namePart.slice(0, 3)));
+    }
+    if (mIdx >= 0) {
+      const shortM = MONTH_ABBRS[mIdx].slice(0, 3);
+      const fullM = MONTH_NAMES[mIdx];
+      return {
+        year, monthIndex: mIdx,
+        displayMonth: `${fullM} ${year}`,
+        shortMonth: `${shortM} '${String(year).slice(2)}`,
+        sortKey: year * 100 + (mIdx + 1)
+      };
+    }
+  }
+
+  // 5. Match Month first: "Month Year" e.g. "January 2026", "Jan '26", "Jan-2026", "Sep, 2026"
+  const monthFirstMatch = clean.match(
+    new RegExp(`^(${MONTH_NAMES.join('|')}|${MONTH_ABBRS.join('|')})[.]?\\s*[-/.,'’]?\\s*(\\d{2,4})?`, 'i')
+  );
+  if (monthFirstMatch) {
+    const namePart = monthFirstMatch[1].toLowerCase();
+    let mIdx = MONTH_NAMES.findIndex(n => n.toLowerCase().startsWith(namePart.slice(0, 3)));
+    if (mIdx === -1) {
+      mIdx = MONTH_ABBRS.findIndex(a => a.toLowerCase().startsWith(namePart.slice(0, 3)));
+    }
+
+    let year: number | undefined = undefined;
+    if (monthFirstMatch[2]) {
+      const yStr = monthFirstMatch[2];
+      year = yStr.length === 2 ? 2000 + parseInt(yStr, 10) : parseInt(yStr, 10);
+      if (year < 1990 || year > 2099) year = undefined;
+    }
+    if (year === undefined && fallbackYear && fallbackYear >= 1990 && fallbackYear <= 2099) {
+      year = fallbackYear;
+    }
+
+    if (mIdx >= 0) {
+      const shortM = MONTH_ABBRS[mIdx].slice(0, 3);
+      const fullM = MONTH_NAMES[mIdx];
+      const displayM = year ? `${fullM} ${year}` : fullM;
+      const shortMonth = year ? `${shortM} '${String(year).slice(2)}` : shortM;
+      const sortKey = year ? year * 100 + (mIdx + 1) : 0;
+      return { year, monthIndex: mIdx, displayMonth: displayM, shortMonth, sortKey };
+    }
+  }
+
+  // Fallback for custom or unrecognized labels
+  return { displayMonth: clean, shortMonth: clean, sortKey: 0 };
+}
+
+/**
+ * Generate ONLY consecutive 2-year window period options (e.g. "2023–2024", "2024–2025", "2025–2026").
+ *
+ * Rules:
+ *  - Must be consecutive 2-year ranges: [y, y + 1]
+ *  - NO skipped ranges like "2023–2025"
+ *  - NO individual-year options ("2023", "2024", ...)
+ *  - NO "All" option
+ */
+export function generatePeriodOptions(points: TrendDataPoint[]): YearPeriodOption[] {
+  if (!points || points.length === 0) {
+    return [];
+  }
+
+  // Extract unique sorted years from points that have a valid year
+  const knownYears = Array.from(
+    new Set(
+      points
+        .map(p => p.year)
+        .filter((y): y is number => typeof y === 'number' && !isNaN(y) && y >= 1990 && y <= 2099)
+    )
+  ).sort((a, b) => a - b);
+
+  if (knownYears.length === 0) {
+    return [{
+      id: 'chunk-1',
+      label: `${points.length} Months`,
+      years: [],
+      pointCount: points.length,
+      minPointIndex: 0,
+      maxPointIndex: points.length - 1
+    }];
+  }
+
+  const minYear = knownYears[0];
+  const maxYear = knownYears[knownYears.length - 1];
+  const options: YearPeriodOption[] = [];
+
+  if (minYear === maxYear) {
+    const y1 = minYear;
+    const y2 = minYear + 1;
+    const rangePts = points.filter(p => p.year === y1 || p.year === y2);
+    const minIdx = rangePts.length > 0 ? Math.min(...rangePts.map(p => p.pointIndex)) : 0;
+    const maxIdx = rangePts.length > 0 ? Math.max(...rangePts.map(p => p.pointIndex)) : points.length - 1;
+    options.push({
+      id: `${y1}-${y2}`,
+      label: `${y1}–${y2}`,
+      years: [y1, y2],
+      pointCount: rangePts.length > 0 ? rangePts.length : points.length,
+      minPointIndex: minIdx,
+      maxPointIndex: maxIdx
+    });
+  } else {
+    // 1. Full span option: e.g. "2023–2026" (all years from minYear to maxYear)
+    if (maxYear - minYear >= 2) {
+      options.push({
+        id: `${minYear}-${maxYear}`,
+        label: `${minYear}–${maxYear}`,
+        years: knownYears,
+        pointCount: points.length,
+        minPointIndex: 0,
+        maxPointIndex: points.length - 1
+      });
+    }
+
+    // 2. Consecutive 2-year ranges: 2023–2024, 2024–2025, 2025–2026
+    for (let y = minYear; y < maxYear; y++) {
+      const y1 = y;
+      const y2 = y + 1;
+      const rangePts = points.filter(p => p.year === y1 || p.year === y2);
+      if (rangePts.length > 0) {
+        const minIdx = Math.min(...rangePts.map(p => p.pointIndex));
+        const maxIdx = Math.max(...rangePts.map(p => p.pointIndex));
+        options.push({
+          id: `${y1}-${y2}`,
+          label: `${y1}–${y2}`,
+          years: [y1, y2],
+          pointCount: rangePts.length,
+          minPointIndex: minIdx,
+          maxPointIndex: maxIdx
+        });
+      }
+    }
+  }
+
+  if (options.length === 0) {
+    options.push({
+      id: `${minYear}-${minYear + 1}`,
+      label: `${minYear}–${minYear + 1}`,
+      years: [minYear, minYear + 1],
+      pointCount: points.length,
+      minPointIndex: 0,
+      maxPointIndex: points.length - 1
+    });
+  }
+
+  return options;
 }
 
 /**
@@ -86,29 +315,15 @@ function formatShortMonth(label: string): string {
 export function parseTrendData(content: string): TrendSeries | null {
   if (!content || typeof content !== 'string') return null;
 
-  // Try parsing Markdown tables first
   const tableResult = parseFromMarkdownTable(content);
-  if (tableResult && tableResult.points.length >= 2) {
-    console.log('[TrendParser] Found data via Markdown table:', tableResult.points.length, 'points');
-    return tableResult;
-  }
+  if (tableResult && tableResult.points.length >= 2) return tableResult;
 
-  // Try parsing arrow / bullet / colon lists (e.g. "January 2026 → $31,073,919.57")
   const listResult = parseFromListOrArrows(content);
-  if (listResult && listResult.points.length >= 2) {
-    console.log('[TrendParser] Found data via list/arrow format:', listResult.points.length, 'points');
-    return listResult;
-  }
+  if (listResult && listResult.points.length >= 2) return listResult;
 
-  // Last resort: scan any line that has both a month name and a currency amount
   const fallbackResult = parseFromAnyLine(content);
-  if (fallbackResult && fallbackResult.points.length >= 2) {
-    console.log('[TrendParser] Found data via fallback scan:', fallbackResult.points.length, 'points');
-    return fallbackResult;
-  }
+  if (fallbackResult && fallbackResult.points.length >= 2) return fallbackResult;
 
-  // Debug: show a snippet of content for troubleshooting
-  console.log('[TrendParser] No trend data detected. Content snippet:', content.substring(0, 400));
   return null;
 }
 
@@ -128,22 +343,15 @@ function parseFromMarkdownTable(content: string): TrendSeries | null {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
 
-    // Track preceding headings for title
     if (line.startsWith('#') || (line.startsWith('**') && line.endsWith('**') && line.toLowerCase().includes('trend'))) {
       precedingHeading = line.replace(/^[#* \t]+|[#* \t]+$/g, '');
     }
 
     if (line.startsWith('|') && line.endsWith('|')) {
-      const cols = line
-        .slice(1, -1)
-        .split('|')
-        .map(c => c.trim());
-
-      // Check if this is a separator row e.g. |---|---|
+      const cols = line.slice(1, -1).split('|').map(c => c.trim());
       const isSeparator = cols.every(c => /^:?-+:?$/.test(c.replace(/\s+/g, '')));
 
       if (!inTable && !isSeparator) {
-        // Potential header
         const isMonthHeader = cols.some(c => /month|date|period|time/i.test(c));
         const isAmountHeader = cols.some(c => /amount|total|spend|invoice|revenue|cost|sales/i.test(c));
 
@@ -154,39 +362,24 @@ function parseFromMarkdownTable(content: string): TrendSeries | null {
           amountColIdx = cols.findIndex(c => /amount|total|spend|revenue|cost|sales/i.test(c));
           countColIdx = cols.findIndex(c => /count|invoices|no\.|number/i.test(c));
 
-          // If count was matched as amount or vice versa, refine
           if (amountColIdx === -1) {
             amountColIdx = cols.findIndex(c => /invoice/i.test(c) && !/count|no\./i.test(c));
           }
-          if (monthColIdx === -1 && cols.length > 0) {
-            monthColIdx = 0;
-          }
-          if (amountColIdx === -1 && cols.length > 1) {
-            amountColIdx = 1;
-          }
+          if (monthColIdx === -1 && cols.length > 0) monthColIdx = 0;
+          if (amountColIdx === -1 && cols.length > 1) amountColIdx = 1;
           continue;
         }
       } else if (inTable) {
-        if (isSeparator) {
-          continue;
-        }
-
-        // Data row
-        if (cols.length >= 2) {
-          rawRows.push(cols);
-        }
+        if (isSeparator) continue;
+        if (cols.length >= 2) rawRows.push(cols);
       }
     } else if (inTable && rawRows.length > 0) {
-      // Table ended
       break;
     }
   }
 
-  if (rawRows.length < 2) {
-    return null;
-  }
+  if (rawRows.length < 2) return null;
 
-  // Parse points from table rows
   const points: TrendDataPoint[] = [];
   let detectedCurrency = '$';
 
@@ -195,9 +388,9 @@ function parseFromMarkdownTable(content: string): TrendSeries | null {
     const amountCell = (amountColIdx >= 0 && amountColIdx < row.length) ? row[amountColIdx] : row[1];
     const countCell = (countColIdx >= 0 && countColIdx < row.length) ? row[countColIdx] : undefined;
 
-    // Check if month cell matches a month or date
     const monthClean = monthCell.replace(/[*_`]/g, '').trim();
-    if (!MONTH_REGEX.test(monthClean) && !/^[0-9]{4}/.test(monthClean) && !/^[a-zA-Z]{3,9}\s+\d{2,4}/.test(monthClean)) {
+    // Must match a month pattern — bare year numbers like "2024" are rejected
+    if (!MONTH_REGEX.test(monthClean) && !/^[a-zA-Z]{3,9}\s+\d{2,4}/.test(monthClean)) {
       continue;
     }
 
@@ -215,32 +408,35 @@ function parseFromMarkdownTable(content: string): TrendSeries | null {
       if (parsedNum !== null) invoiceCountNum = parsedNum;
     }
 
+    const dateInfo = parseDateInfo(monthClean);
+
+    // Skip if parseDateInfo could not identify a month (e.g. bare year "2024")
+    if (dateInfo.monthIndex === undefined) continue;
+
+    // Deduplicate: same month+year combination
+    if (points.some(p => p.year === dateInfo.year && p.monthIndex === dateInfo.monthIndex)) continue;
+
     points.push({
-      month: monthClean,
-      shortMonth: formatShortMonth(monthClean),
+      month: dateInfo.displayMonth,
+      shortMonth: dateInfo.shortMonth,
       rawAmount: amountCell.replace(/[*_`]/g, '').trim(),
       amount: numAmount,
       currencySymbol: curr,
       invoiceCount: invoiceCountStr,
-      invoiceCountNum: invoiceCountNum
+      invoiceCountNum: invoiceCountNum,
+      year: dateInfo.year,
+      monthIndex: dateInfo.monthIndex,
+      sortKey: dateInfo.sortKey,
+      pointIndex: 0  // filled by buildTrendSeries
     });
   }
 
   if (points.length < 2) return null;
-
-  return buildTrendSeries(
-    precedingHeading || 'Monthly Invoice Amount Trend',
-    points,
-    detectedCurrency
-  );
+  return buildTrendSeries(precedingHeading || 'Monthly Invoice Amount Trend', points, detectedCurrency);
 }
 
 /**
- * Attempt to extract trend data from arrow, bullet, or colon lines
- * Examples:
- * January 2026 → $31,073,919.57
- * - February 2026: $50,103,350.38 (Count: 1,890)
- * 1. March 2026 - $50,169,126.37
+ * Attempt to extract trend data from arrow, bullet, or colon lines.
  */
 function parseFromListOrArrows(content: string): TrendSeries | null {
   const lines = content.split('\n');
@@ -248,16 +444,12 @@ function parseFromListOrArrows(content: string): TrendSeries | null {
   let detectedCurrency = '$';
   let precedingHeading = '';
 
-  // Regex for line matching:
-  // (bullet/number)? (Month Year) (separator or whitespace) (Currency)(Amount) (optional count info)
-  // Supports: "January 2026 → $31,073,919.57", "January 2026: $31,073,919.57", "January 2026 $31,073,919.57"
-  const linePattern = /(?:[-*•\d.]+\s*)?([A-Za-z]{3,9}\s*(?:20\d\d|19\d\d|'\d\d)?)(?:\s*[→\->:=–|]\s*|\s+is\s+|\s+)([$₹€£¥A-Z]{0,3}\s*[0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]+)?|[0-9]+(?:\.[0-9]+)?)(.*)/i;
+  const linePattern = /(?:[-*•\d.]+\s*)?([A-Za-z0-9\-/.']{3,15}(?:\s*(?:20\d\d|19\d\d|'\d\d))?)(?:\s*[→\->:=–|]\s*|\s+is\s+|\s+)([$₹€£¥A-Z]{0,3}\s*[0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]+)?|[0-9]+(?:\.[0-9]+)?)(.*)/i;
 
   for (let i = 0; i < lines.length; i++) {
     const rawLine = lines[i].trim();
     if (!rawLine) continue;
 
-    // Strip markdown bold/italic markers so **January 2026** → ... is handled correctly
     const cleanedLine = rawLine.replace(/\*\*?|__?/g, '').trim();
 
     if ((cleanedLine.startsWith('#') || lineHasTrend(cleanedLine)) && !MONTH_REGEX.test(cleanedLine)) {
@@ -273,17 +465,14 @@ function parseFromListOrArrows(content: string): TrendSeries | null {
       const amountStr = match[2].trim();
       const trailingStr = match[3] ? match[3].trim() : '';
 
-      // Verify that monthStr actually has month name
       if (!MONTH_REGEX.test(monthStr)) continue;
 
       const numAmount = parseNumericAmount(amountStr);
-      // Guard against false positives (partial years like "202" captured as amounts)
       if (numAmount === null || numAmount < 100) continue;
 
       const curr = extractCurrencySymbol(amountStr);
       if (curr) detectedCurrency = curr;
 
-      // Extract optional count from trailing text e.g. "(Count: 1,245)" or "1,245 invoices"
       let countStr: string | undefined = undefined;
       let countNum: number | undefined = undefined;
       const countMatch = trailingStr.match(/(?:count|invoices?)[:\s]*([0-9,]+)/i) ||
@@ -294,25 +483,32 @@ function parseFromListOrArrows(content: string): TrendSeries | null {
         if (parsedCount !== null) countNum = parsedCount;
       }
 
+      const dateInfo = parseDateInfo(monthStr);
+
+      // Skip if no month was parsed (bare year numbers rejected here too)
+      if (dateInfo.monthIndex === undefined) continue;
+
+      // Deduplicate by year+month combination
+      if (points.some(p => p.year === dateInfo.year && p.monthIndex === dateInfo.monthIndex)) continue;
+
       points.push({
-        month: monthStr,
-        shortMonth: formatShortMonth(monthStr),
+        month: dateInfo.displayMonth,
+        shortMonth: dateInfo.shortMonth,
         rawAmount: amountStr,
         amount: numAmount,
         currencySymbol: curr,
         invoiceCount: countStr ? `${countStr} invoices` : undefined,
-        invoiceCountNum: countNum
+        invoiceCountNum: countNum,
+        year: dateInfo.year,
+        monthIndex: dateInfo.monthIndex,
+        sortKey: dateInfo.sortKey,
+        pointIndex: 0  // filled by buildTrendSeries
       });
     }
   }
 
   if (points.length < 2) return null;
-
-  return buildTrendSeries(
-    precedingHeading || 'Monthly Invoice Amount Trend',
-    points,
-    detectedCurrency
-  );
+  return buildTrendSeries(precedingHeading || 'Monthly Invoice Amount Trend', points, detectedCurrency);
 }
 
 function lineHasTrend(line: string): boolean {
@@ -321,7 +517,6 @@ function lineHasTrend(line: string): boolean {
 
 /**
  * Fallback: scan every line for co-occurrence of a month name + a large number (≥1000)
- * This is a last-resort parser for unusual AI response formats.
  */
 function parseFromAnyLine(content: string): TrendSeries | null {
   const lines = content.split('\n');
@@ -329,20 +524,16 @@ function parseFromAnyLine(content: string): TrendSeries | null {
   let detectedCurrency = '$';
   let precedingHeading = '';
 
-  // Relaxed: find month name + year optionally + any large number on same line
   const monthCapture = new RegExp(
-    `((?:${MONTH_NAMES.join('|')}|${MONTH_ABBRS.join('|')})\\s*(?:20\\d\\d|19\\d\\d)?)`,
+    `((?:${MONTH_NAMES.join('|')}|${MONTH_ABBRS.join('|')})\\s*(?:20\\d\\d|19\\d\\d)?|(?:20\\d\\d)[-/.](?:0?[1-9]|1[0-2]))`,
     'i'
   );
-  // Large amount: currency symbol optional + number ≥ 1000
   const amountCapture = /([\$₹€£¥]?\s*[1-9][0-9]{2,}(?:,[0-9]{3})*(?:\.[0-9]+)?)/;
 
   for (const rawLine of lines) {
-    // Strip markdown formatting
     const line = rawLine.replace(/\*\*?|__?|`/g, '').trim();
     if (!line) continue;
 
-    // Track headings
     if ((line.startsWith('#') || lineHasTrend(line)) && !MONTH_REGEX.test(line)) {
       const clean = line.replace(/^[#* \t]+|[#* \t:]+$/g, '');
       if (!precedingHeading || (clean.length < precedingHeading.length && clean.toLowerCase().includes('trend'))) {
@@ -353,7 +544,6 @@ function parseFromAnyLine(content: string): TrendSeries | null {
 
     const mMonth = line.match(monthCapture);
     const mAmount = line.match(amountCapture);
-
     if (!mMonth || !mAmount) continue;
 
     const monthStr = mMonth[1].trim();
@@ -361,30 +551,31 @@ function parseFromAnyLine(content: string): TrendSeries | null {
 
     const amountStr = mAmount[1].trim();
     const numAmount = parseNumericAmount(amountStr);
-    if (numAmount === null || numAmount < 1000) continue;
+    if (numAmount === null || numAmount < 100) continue;
 
-    const curr = extractCurrencySymbol(amountStr) || detectedCurrency;
+    const curr = extractCurrencySymbol(amountStr);
     if (curr) detectedCurrency = curr;
 
-    // Avoid duplicate months
-    if (points.some(p => p.month === monthStr)) continue;
+    const dateInfo = parseDateInfo(monthStr);
+    if (dateInfo.monthIndex === undefined) continue;
+
+    if (points.some(p => p.year === dateInfo.year && p.monthIndex === dateInfo.monthIndex)) continue;
 
     points.push({
-      month: monthStr,
-      shortMonth: formatShortMonth(monthStr),
+      month: dateInfo.displayMonth,
+      shortMonth: dateInfo.shortMonth,
       rawAmount: amountStr,
       amount: numAmount,
       currencySymbol: curr,
+      year: dateInfo.year,
+      monthIndex: dateInfo.monthIndex,
+      sortKey: dateInfo.sortKey,
+      pointIndex: 0
     });
   }
 
   if (points.length < 2) return null;
-
-  return buildTrendSeries(
-    precedingHeading || 'Monthly Invoice Amount Trend',
-    points,
-    detectedCurrency
-  );
+  return buildTrendSeries(precedingHeading || 'Monthly Invoice Amount Trend', points, detectedCurrency);
 }
 
 /**
@@ -392,9 +583,21 @@ function parseFromAnyLine(content: string): TrendSeries | null {
  */
 function buildTrendSeries(
   title: string,
-  points: TrendDataPoint[],
+  rawPoints: TrendDataPoint[],
   currencySymbol: string
 ): TrendSeries {
+  // Sort points chronologically:
+  // If points have valid sortKey (> 0), sort by sortKey; otherwise preserve original order
+  const hasValidDates = rawPoints.some(p => p.sortKey > 0);
+  const points = hasValidDates
+    ? [...rawPoints].sort((a, b) => a.sortKey - b.sortKey)
+    : [...rawPoints];
+
+  // Assign stable, sequential 0-based pointIndex to every point
+  points.forEach((p, idx) => {
+    p.pointIndex = idx;
+  });
+
   let max = points[0].amount;
   let min = points[0].amount;
   let sum = 0;
@@ -415,13 +618,17 @@ function buildTrendSeries(
     if (pt.invoiceCount) hasCount = true;
   }
 
-  // Calculate percentage of max for each point
   for (const pt of points) {
     pt.percentOfMax = max > 0 ? (pt.amount / max) * 100 : 0;
   }
 
-  // Format total amount with same currency symbol
   const formattedSum = `${currencySymbol}${sum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  // Generate period options using pointIndex ranges
+  const periodOptions = generatePeriodOptions(points);
+
+  // Default: first period option (e.g., "2023-2026" full range if available, or first 2-year range)
+  const defaultPeriodId = periodOptions.length > 0 ? periodOptions[0].id : '';
 
   return {
     title: title || 'Monthly Invoice Amount Trend',
@@ -433,6 +640,8 @@ function buildTrendSeries(
     totalAmountFormatted: formattedSum,
     peakPoint,
     lowestPoint,
-    hasInvoiceCount: hasCount
+    hasInvoiceCount: hasCount,
+    periodOptions,
+    defaultPeriodId
   };
 }
