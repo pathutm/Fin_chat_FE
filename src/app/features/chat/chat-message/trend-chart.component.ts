@@ -1,8 +1,26 @@
 import { Component, input, signal, computed, effect, ElementRef, viewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { TrendSeries, TrendDataPoint, YearPeriodOption } from '../../../core/utils/trend-parser.util';
-
-export type ChartType = '3d-bar' | 'line' | 'area';
+import {
+  TrendSeries,
+  TrendDataPoint,
+  DataSeries,
+  EXECUTIVE_PALETTE,
+  YearPeriodOption,
+  ChartType,
+  ChartTypeMeta,
+  getSuitableChartTypes,
+  analyzeUserQuery,
+  UserQueryAnalysis,
+  calculateHistogramBins,
+  HistogramBin,
+  calculateWaterfallData,
+  WaterfallStep,
+  calculateParetoData,
+  ParetoItem,
+  calculateDonutSlices,
+  DonutSlice,
+  extractCurrencySymbol
+} from '../../../core/utils/trend-parser.util';
 
 interface Tick {
   value: number;
@@ -10,15 +28,15 @@ interface Tick {
   y: number;
 }
 
-/**
- * A lightweight descriptor for a month dropdown entry.
- * Uses pointIndex (always unique) as the option value — never sortKey (which may be 0 for all).
- */
 interface MonthOption {
-  pointIndex: number;    // stable unique ID — used as <option value>
-  month: string;         // e.g. "January 2026"
-  shortMonth: string;    // e.g. "Jan '26"
-  sortKey: number;       // for range comparisons (may be 0)
+  pointIndex: number;
+  month: string;
+  shortMonth: string;
+  sortKey: number;
+  year?: number;
+  monthIndex?: number;
+  amount: number;
+  isAvailable: boolean;
 }
 
 @Component({
@@ -26,42 +44,66 @@ interface MonthOption {
   standalone: true,
   imports: [CommonModule],
   template: `
-    <!-- ── 1. GRAPH CONFIRMATION PROMPT ── -->
-    @if (isConfirmed() === null) {
-      <div class="trend-prompt-card">
-        <div class="prompt-left">
-          <div class="prompt-icon">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2">
-              <path d="M3 3v18h18"/>
-              <path d="M18 9l-5 5-4-4-3 3"/>
+    <!-- ── 1. INITIAL RANGE CLARIFICATION CARD (When broad question has no range) ── -->
+    @if (!isClarified() && queryAnalysis().isAmbiguous) {
+      <div class="trend-clarification-card">
+        <div class="clarification-header">
+          <div class="clarification-icon">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2">
+              <circle cx="12" cy="12" r="10"/>
+              <polyline points="12 6 12 12 16 14"/>
             </svg>
           </div>
-          <div class="prompt-text-group">
-            <span class="prompt-title">Trend Visualization Available</span>
-            <span class="prompt-desc">
-              Found {{ trendData().points.length }} monthly data points
-              ({{ trendData().points[0].month }} – {{ trendData().points[trendData().points.length - 1].month }}).
-              Would you like to view the interactive chart?
+          <div class="clarification-text-group">
+            <span class="clarification-title">Select Time Range for Analysis</span>
+            <span class="clarification-desc">
+              Data available from <strong>{{ trendData().points[0].month }}</strong> to
+              <strong>{{ trendData().points[trendData().points.length - 1].month }}</strong>
+              ({{ trendData().points.length }} monthly records). Which time range would you like to analyze?
             </span>
           </div>
         </div>
-        <div class="prompt-actions">
-          <button class="prompt-btn confirm-btn" (click)="confirmChart(true)">
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5">
-              <polyline points="20 6 9 17 4 12"/>
-            </svg>
-            <span>Yes, Show Chart</span>
-          </button>
-          <button class="prompt-btn decline-btn" (click)="confirmChart(false)">
+        <div class="clarification-options">
+          <button class="clarification-pill-btn primary" (click)="chooseInitialOption('all')">
             <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2">
-              <line x1="18" y1="6" x2="6" y2="18"/>
-              <line x1="6" y1="6" x2="18" y2="18"/>
+              <path d="M3 3v18h18"/>
+              <path d="M18 9l-5 5-4-4-3 3"/>
             </svg>
-            <span>No</span>
+            <span>All available data ({{ trendData().points[0].shortMonth }} – {{ trendData().points[trendData().points.length - 1].shortMonth }})</span>
+          </button>
+          <button class="clarification-pill-btn" (click)="chooseInitialOption('latest12')">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+              <line x1="16" y1="2" x2="16" y2="6"/>
+              <line x1="8" y1="2" x2="8" y2="6"/>
+            </svg>
+            <span>Latest 12 months</span>
+          </button>
+          @if (trendData().points.length > 12) {
+            <button class="clarification-pill-btn" (click)="chooseInitialOption('latest24')">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                <line x1="16" y1="2" x2="16" y2="6"/>
+                <line x1="8" y1="2" x2="8" y2="6"/>
+              </svg>
+              <span>Latest 24 months</span>
+            </button>
+          }
+          <button class="clarification-pill-btn custom" (click)="chooseInitialOption('custom')">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="4" y1="21" x2="4" y2="14"/>
+              <line x1="4" y1="10" x2="4" y2="3"/>
+              <line x1="12" y1="21" x2="12" y2="12"/>
+              <line x1="12" y1="8" x2="12" y2="3"/>
+              <line x1="20" y1="21" x2="20" y2="16"/>
+              <line x1="20" y1="12" x2="20" y2="3"/>
+            </svg>
+            <span>Custom date range</span>
           </button>
         </div>
       </div>
     } @else if (isConfirmed() === false) {
+      <!-- ── 2. DECLINED BANNER ── -->
       <div class="trend-declined-card">
         <div class="declined-info">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
@@ -69,31 +111,37 @@ interface MonthOption {
             <line x1="12" y1="20" x2="12" y2="4"></line>
             <line x1="6" y1="20" x2="6" y2="14"></line>
           </svg>
-          <span>Trend chart hidden</span>
+          <span>Trend visualization hidden</span>
         </div>
-        <button class="reopen-chart-btn" (click)="confirmChart(true)">Show Chart</button>
+        <button class="reopen-chart-btn" (click)="reopenChart()">Show Visualization</button>
       </div>
     } @else {
-      <!-- ── 2. FULL INTERACTIVE TREND CHART ── -->
-      <div class="trend-card" #chartCard>
+      <!-- ── 3. FULL PROFESSIONAL CFO ANALYTICS VISUALIZATION ENGINE ── -->
+      <div class="trend-card" #chartCard (click)="closePopoversOnBackdrop($event)">
         <!-- Header -->
         <div class="chart-header">
           <div class="header-left">
             <div class="metric-title-wrap">
               <div class="chart-icon-box">
                 <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
-                  <line x1="18" y1="20" x2="18" y2="10"></line>
-                  <line x1="12" y1="20" x2="12" y2="4"></line>
-                  <line x1="6" y1="20" x2="6" y2="14"></line>
+                  <path d="M3 3v18h18"/>
+                  <path d="M18 9l-5 5-4-4-3 3"/>
                 </svg>
               </div>
               <div>
                 <h4 class="metric-title">{{ trendData().title }}</h4>
                 <div class="metric-meta-row">
-                  <span class="meta-pill">{{ activePoints().length }} Months Displayed</span>
-                  <span class="meta-pill highlight">Peak: {{ activePeakPoint().month }}</span>
-                  @if (trendData().hasInvoiceCount) {
-                    <span class="meta-pill count-pill">Includes Invoices</span>
+                  <span class="meta-pill highlight">{{ activePoints().length }} {{ trendData().categoryType === 'category' ? 'Categories' : 'Periods' }} Plotted</span>
+                  @if (activeDateRangeLabel()) {
+                    <span class="meta-pill date-range-pill">Range: {{ activeDateRangeLabel() }}</span>
+                  }
+                  @if (isMultiSeries()) {
+                    <span class="meta-pill count-pill">{{ activeSeriesList().length }} Entities Compared</span>
+                  } @else {
+                    <span class="meta-pill peak-pill">Peak: {{ activePeakPoint().month }}</span>
+                  }
+                  @if (trendData().hasInvoiceCount && !isMultiSeries()) {
+                    <span class="meta-pill count-pill">Multi-Metric (Amount & Volume)</span>
                   }
                 </div>
               </div>
@@ -101,8 +149,8 @@ interface MonthOption {
           </div>
 
           <div class="header-right">
-            <!-- Zoom Controls (button + mouse-wheel) -->
-            <div class="control-group zoom-group" title="Zoom (or use mouse wheel over chart)">
+            <!-- Zoom Controls (Viewport-only scaling) -->
+            <div class="control-group zoom-group" title="Zoom chart viewport (or use mouse wheel)">
               <button class="ctrl-btn" [disabled]="zoomLevel() <= 0.8" (click)="zoomOut()" aria-label="Zoom out">
                 <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2">
                   <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -119,99 +167,255 @@ interface MonthOption {
               </button>
             </div>
 
-            <!-- Chart Type Selector -->
-            <div class="control-group chart-type-group" role="tablist" aria-label="Chart Type">
-              <button class="chart-tab-btn" [class.active]="selectedType() === '3d-bar'" (click)="selectType('3d-bar')" role="tab" title="3D Bar Chart">
-                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M4 20h16M4 20V12l4-2v10M12 20V6l4-2v16M20 20V9l-4-2" />
+            <!-- Download / Export Controls -->
+            <div class="control-group export-group">
+              <button
+                class="ctrl-btn export-btn"
+                [class.active]="isDownloadMenuOpen()"
+                (click)="toggleDownloadMenu($event)"
+                title="Download visualization"
+                aria-label="Download visualization"
+              >
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="7 10 12 15 17 10"/>
+                  <line x1="12" y1="15" x2="12" y2="3"/>
                 </svg>
-                <span>3D Bar</span>
-              </button>
-              <button class="chart-tab-btn" [class.active]="selectedType() === 'line'" (click)="selectType('line')" role="tab" title="Line Chart">
-                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
-                  <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                <span>Export</span>
+                <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.2">
+                  <polyline points="6 9 12 15 18 9"></polyline>
                 </svg>
-                <span>Line</span>
               </button>
-              <button class="chart-tab-btn" [class.active]="selectedType() === 'area'" (click)="selectType('area')" role="tab" title="Area Chart">
-                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M3 20h18M3 20l4-9 6 4 8-10v15H3z" />
-                </svg>
-                <span>Area</span>
-              </button>
+
+              @if (isDownloadMenuOpen()) {
+                <div class="export-dropdown-menu" (click)="$event.stopPropagation()">
+                  <button class="dropdown-opt-btn" (click)="exportChart('png')">
+                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                      <circle cx="8.5" cy="8.5" r="1.5"/>
+                      <polyline points="21 15 16 10 5 21"/>
+                    </svg>
+                    <span>Download as PNG (Retina 2x)</span>
+                  </button>
+                  <button class="dropdown-opt-btn" (click)="exportChart('svg')">
+                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+                      <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+                      <polyline points="2 17 12 22 22 17"/>
+                      <polyline points="2 12 12 17 22 12"/>
+                    </svg>
+                    <span>Download as Vector SVG</span>
+                  </button>
+                </div>
+              }
             </div>
           </div>
         </div>
 
-        <!-- ── 3. FILTER BAR: Year Period + Dynamic From/To Month ── -->
+        <!-- ── 4. DYNAMIC VISUALIZATION CATALOG SELECTOR (Only suitable types shown) ── -->
+        <div class="chart-catalog-bar" role="tablist" aria-label="Visualization Type">
+          <span class="catalog-label">Visualization:</span>
+          <div class="catalog-tabs-container">
+            @for (c of suitableTypes(); track c.type) {
+              <button
+                type="button"
+                class="catalog-tab-btn"
+                [class.active]="selectedType() === c.type"
+                (click)="selectType(c.type)"
+                role="tab"
+                [attr.aria-selected]="selectedType() === c.type"
+                [title]="c.description"
+              >
+                @if (c.type === 'line') {
+                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                  </svg>
+                }
+                @if (c.type === 'bar') {
+                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="12" width="4" height="8" rx="1"/>
+                    <rect x="10" y="6" width="4" height="14" rx="1"/>
+                    <rect x="17" y="2" width="4" height="18" rx="1"/>
+                  </svg>
+                }
+                @if (c.type === 'area') {
+                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 20h18M3 20l4-9 6 4 8-10v15H3z"/>
+                  </svg>
+                }
+                <span>{{ c.label }}</span>
+              </button>
+            }
+          </div>
+        </div>
+
+        <!-- ── 5. PERMANENT DATE RANGE FILTERING BAR (Always Visible & Interactive) ── -->
         <div class="filters-bar">
-          <!-- Year Period -->
-          @if (periodOptions().length > 1) {
-            <div class="filter-item">
-              <span class="filter-label">Year:</span>
-              <div class="select-pill-wrap">
-                <svg class="select-icon" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+          <!-- Quick Presets -->
+          <div class="filter-item presets-group">
+            <span class="filter-label">Quick:</span>
+            <button
+              class="preset-pill-btn"
+              [class.active]="activePreset() === 'all'"
+              (click)="setPreset('all')"
+              title="View all available data ({{ trendData().points[0].shortMonth }} – {{ trendData().points[trendData().points.length - 1].shortMonth }})"
+            >
+              All Data ({{ trendData().points.length }}M)
+            </button>
+            @if (trendData().points.length > 12) {
+              <button
+                class="preset-pill-btn"
+                [class.active]="activePreset() === 'latest12'"
+                (click)="setPreset('latest12')"
+                title="View latest 12 months"
+              >
+                Latest 12M
+              </button>
+            }
+            @if (trendData().points.length > 24) {
+              <button
+                class="preset-pill-btn"
+                [class.active]="activePreset() === 'latest24'"
+                (click)="setPreset('latest24')"
+                title="View latest 24 months"
+              >
+                Latest 24M
+              </button>
+            }
+            @if (latestYear()) {
+              <button
+                class="preset-pill-btn"
+                [class.active]="activePreset() === 'currentYear'"
+                (click)="setPreset('currentYear')"
+                title="View current data year ({{ latestYear() }})"
+              >
+                {{ latestYear() }}
+              </button>
+            }
+            @if (previousYear()) {
+              <button
+                class="preset-pill-btn"
+                [class.active]="activePreset() === 'prevYear'"
+                (click)="setPreset('prevYear')"
+                title="View previous data year ({{ previousYear() }})"
+              >
+                {{ previousYear() }}
+              </button>
+            }
+          </div>
+
+          <div class="filter-divider"></div>
+
+          <!-- Interactive Calendar / Month Picker: From Date -->
+          <div class="filter-item date-picker-item">
+            <span class="filter-label">From:</span>
+            <div class="picker-trigger-wrap">
+              <button
+                class="picker-trigger-btn"
+                [class.active]="isFromPickerOpen()"
+                (click)="toggleFromPicker($event)"
+                title="Click to open From Month calendar picker"
+                aria-label="Select start date"
+              >
+                <svg class="picker-icon" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
                   <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
                   <line x1="16" y1="2" x2="16" y2="6"></line>
                   <line x1="8" y1="2" x2="8" y2="6"></line>
                   <line x1="3" y1="10" x2="21" y2="10"></line>
                 </svg>
-                <select class="filter-select" [value]="selectedPeriodId()" (change)="onPeriodChange($event)" aria-label="Year period">
-                  @for (opt of periodOptions(); track opt.id) {
-                    <option [value]="opt.id">{{ opt.label }}</option>
-                  }
-                </select>
-                <svg class="select-chevron" viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.2">
+                <span class="picker-value">{{ selectedFromPoint()?.month || 'Select date' }}</span>
+                <svg class="picker-chevron" viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.2">
                   <polyline points="6 9 12 15 18 9"></polyline>
                 </svg>
-              </div>
-            </div>
-          }
+              </button>
 
-          <!-- From Month — sourced from COMPLETE period months, tracked by pointIndex -->
-          @if (availablePeriodMonths().length > 1) {
-            <div class="filter-item">
-              <span class="filter-label">From:</span>
-              <div class="select-pill-wrap">
-                <select
-                  class="filter-select"
-                  [value]="selectedFromIdx()"
-                  (change)="onFromMonthChange($event)"
-                  aria-label="From month"
-                >
-                  @for (m of fromMonthOptions(); track m.pointIndex) {
-                    <option [value]="m.pointIndex">{{ m.month }}</option>
-                  }
-                </select>
-                <svg class="select-chevron" viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.2">
+              @if (isFromPickerOpen()) {
+                <div class="calendar-popover" (click)="$event.stopPropagation()">
+                  <div class="popover-header">
+                    <span class="popover-title">Select Start Month</span>
+                    <span class="popover-bounds">Bounds: {{ trendData().points[0].shortMonth }} – {{ trendData().points[trendData().points.length - 1].shortMonth }}</span>
+                  </div>
+                  <div class="calendar-years-grid">
+                    @for (yr of availableYears(); track yr) {
+                      <div class="year-block">
+                        <span class="year-title">{{ yr }}</span>
+                        <div class="months-chips-grid">
+                          @for (m of getMonthsForYear(yr); track m.monthIndex) {
+                            <button
+                              class="month-chip-btn"
+                              [class.active]="selectedFromPoint()?.sortKey === m.sortKey"
+                              [disabled]="!m.isAvailable"
+                              (click)="selectFromMonth(m.pointIndex)"
+                              [title]="m.isAvailable ? m.month : 'No data recorded for this month'"
+                            >
+                              {{ m.shortMonth.slice(0, 3) }}
+                            </button>
+                          }
+                        </div>
+                      </div>
+                    }
+                  </div>
+                </div>
+              }
+            </div>
+          </div>
+
+          <!-- Interactive Calendar / Month Picker: To Date -->
+          <div class="filter-item date-picker-item">
+            <span class="filter-label">To:</span>
+            <div class="picker-trigger-wrap">
+              <button
+                class="picker-trigger-btn"
+                [class.active]="isToPickerOpen()"
+                (click)="toggleToPicker($event)"
+                title="Click to open To Month calendar picker"
+                aria-label="Select end date"
+              >
+                <svg class="picker-icon" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                  <line x1="16" y1="2" x2="16" y2="6"></line>
+                  <line x1="8" y1="2" x2="8" y2="6"></line>
+                  <line x1="3" y1="10" x2="21" y2="10"></line>
+                </svg>
+                <span class="picker-value">{{ selectedToPoint()?.month || 'Select date' }}</span>
+                <svg class="picker-chevron" viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.2">
                   <polyline points="6 9 12 15 18 9"></polyline>
                 </svg>
-              </div>
-            </div>
+              </button>
 
-            <!-- To Month — sourced from COMPLETE period months, tracked by pointIndex -->
-            <div class="filter-item">
-              <span class="filter-label">To:</span>
-              <div class="select-pill-wrap">
-                <select
-                  class="filter-select"
-                  [value]="selectedToIdx()"
-                  (change)="onToMonthChange($event)"
-                  aria-label="To month"
-                >
-                  @for (m of toMonthOptions(); track m.pointIndex) {
-                    <option [value]="m.pointIndex">{{ m.month }}</option>
-                  }
-                </select>
-                <svg class="select-chevron" viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.2">
-                  <polyline points="6 9 12 15 18 9"></polyline>
-                </svg>
-              </div>
+              @if (isToPickerOpen()) {
+                <div class="calendar-popover" (click)="$event.stopPropagation()">
+                  <div class="popover-header">
+                    <span class="popover-title">Select End Month</span>
+                    <span class="popover-bounds">Available up to {{ trendData().points[trendData().points.length - 1].shortMonth }}</span>
+                  </div>
+                  <div class="calendar-years-grid">
+                    @for (yr of availableYears(); track yr) {
+                      <div class="year-block">
+                        <span class="year-title">{{ yr }}</span>
+                        <div class="months-chips-grid">
+                          @for (m of getMonthsForYear(yr); track m.monthIndex) {
+                            <button
+                              class="month-chip-btn"
+                              [class.active]="selectedToPoint()?.sortKey === m.sortKey"
+                              [disabled]="!m.isAvailable || (selectedFromPoint() && m.sortKey < selectedFromPoint()!.sortKey)"
+                              (click)="selectToMonth(m.pointIndex)"
+                              [title]="m.isAvailable ? m.month : 'Not available or earlier than From date'"
+                            >
+                              {{ m.shortMonth.slice(0, 3) }}
+                            </button>
+                          }
+                        </div>
+                      </div>
+                    }
+                  </div>
+                </div>
+              }
             </div>
-          }
+          </div>
 
+          <!-- Reset Filter Button -->
           @if (isRangeCustomized()) {
-            <button class="reset-range-btn" (click)="resetToFullPeriod()" title="Reset to full period">
+            <button class="reset-range-btn" (click)="setPreset('all')" title="Reset to entire available range">
               <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
                 <path d="M3 3v5h5"/>
@@ -221,7 +425,47 @@ interface MonthOption {
           }
         </div>
 
-        <!-- ── 4. SCROLLABLE CHART VIEWPORT WITH MOUSE-WHEEL ZOOM ── -->
+        <!-- Multi-Series Interactive Legend -->
+        @if (isMultiSeriesVisible()) {
+          <div class="chart-legend-row">
+            @if (isMultiSeries()) {
+              @for (s of trendData().seriesList; track s.id) {
+                <button
+                  type="button"
+                  class="legend-item interactive-legend-item"
+                  [class.dimmed]="hiddenSeriesIds().has(s.id)"
+                  (click)="toggleSeriesVisibility(s.id)"
+                  [title]="'Click to toggle visibility of ' + s.name"
+                >
+                  <span class="legend-color-dot" [style.background]="s.color"></span>
+                  <span class="legend-label">{{ s.name }}</span>
+                  <span class="legend-meta">Total: {{ formatCompactCurrency(getSeriesTotal(s)) }}</span>
+                </button>
+              }
+            } @else {
+              <div class="legend-item" (mouseenter)="hoveredSeries.set('amount')" (mouseleave)="hoveredSeries.set(null)">
+                <span class="legend-color-dot" style="background: #2563eb;"></span>
+                <span class="legend-label">Invoice Amount</span>
+                <span class="legend-meta">Total: {{ formatCompactCurrency(activeTotalAmount()) }}</span>
+              </div>
+              @if (trendData().hasInvoiceCount) {
+                <div class="legend-item" (mouseenter)="hoveredSeries.set('count')" (mouseleave)="hoveredSeries.set(null)">
+                  <span class="legend-color-dot" style="background: #d97706;"></span>
+                  <span class="legend-label">Invoice Count</span>
+                  <span class="legend-meta">Volume metrics</span>
+                </div>
+              }
+            }
+            @if (selectedType() === 'pareto') {
+              <div class="legend-item">
+                <span class="legend-color-line" style="border-top: 2px dashed #f59e0b;"></span>
+                <span class="legend-label">Cumulative % (80/20 Rule)</span>
+              </div>
+            }
+          </div>
+        }
+
+        <!-- ── 6. SCROLLABLE CHART VIEWPORT (Dynamic width, zero data slicing) ── -->
         <div
           class="chart-viewport"
           #viewport
@@ -229,171 +473,531 @@ interface MonthOption {
           tabindex="0"
           aria-label="Chart Viewport"
         >
-          <div class="svg-container" [style.min-width.px]="svgWidth() * zoomLevel()">
+          <div class="svg-container" [style.min-width.px]="viewportSvgWidth()">
             <svg
+              #chartSvg
               class="trend-svg"
-              [attr.viewBox]="'0 0 ' + svgWidth() + ' 290'"
+              [attr.viewBox]="'0 0 ' + viewportSvgWidth() + ' 290'"
               preserveAspectRatio="none"
             >
               <defs>
-                <linearGradient id="barFrontGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-                  <stop offset="0%" stop-color="oklch(0.64 0.17 256)"/>
-                  <stop offset="60%" stop-color="oklch(0.58 0.16 256)"/>
-                  <stop offset="100%" stop-color="oklch(0.48 0.15 260)"/>
+                <linearGradient id="barGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stop-color="#3b82f6"/>
+                  <stop offset="100%" stop-color="#1d4ed8"/>
                 </linearGradient>
-                <linearGradient id="barFrontSelectedGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-                  <stop offset="0%" stop-color="oklch(0.45 0.13 265)"/>
-                  <stop offset="100%" stop-color="oklch(0.32 0.11 265)"/>
+                <linearGradient id="barSelectedGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stop-color="#1e40af"/>
+                  <stop offset="100%" stop-color="#0f172a"/>
                 </linearGradient>
-                <linearGradient id="barTopGrad" x1="0%" y1="100%" x2="100%" y2="0%">
-                  <stop offset="0%" stop-color="oklch(0.72 0.14 256)"/>
-                  <stop offset="100%" stop-color="oklch(0.82 0.10 256)"/>
+                <linearGradient id="countBarGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stop-color="#f59e0b"/>
+                  <stop offset="100%" stop-color="#b45309"/>
                 </linearGradient>
-                <linearGradient id="barTopSelectedGrad" x1="0%" y1="100%" x2="100%" y2="0%">
-                  <stop offset="0%" stop-color="oklch(0.55 0.12 265)"/>
-                  <stop offset="100%" stop-color="oklch(0.68 0.10 265)"/>
-                </linearGradient>
-                <linearGradient id="barSideGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                  <stop offset="0%" stop-color="oklch(0.46 0.14 260)"/>
-                  <stop offset="100%" stop-color="oklch(0.38 0.12 262)"/>
-                </linearGradient>
-                <linearGradient id="areaTrendGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-                  <stop offset="0%" stop-color="oklch(0.58 0.16 256)" stop-opacity="0.48"/>
-                  <stop offset="45%" stop-color="oklch(0.58 0.16 256)" stop-opacity="0.24"/>
-                  <stop offset="85%" stop-color="oklch(0.58 0.16 256)" stop-opacity="0.08"/>
-                  <stop offset="100%" stop-color="oklch(0.58 0.16 256)" stop-opacity="0.02"/>
+                <linearGradient id="areaGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stop-color="#2563eb" stop-opacity="0.45"/>
+                  <stop offset="50%" stop-color="#3b82f6" stop-opacity="0.20"/>
+                  <stop offset="100%" stop-color="#60a5fa" stop-opacity="0.02"/>
                 </linearGradient>
               </defs>
 
-              <!-- Grid & Y-Axis -->
-              <g class="chart-grid">
-                @for (tick of yTicks(); track tick.value) {
-                  <line class="grid-line" [attr.x1]="gridLeft" [attr.y1]="tick.y" [attr.x2]="gridRight()" [attr.y2]="tick.y"/>
-                  <text class="axis-label y-axis-label" [attr.x]="gridLeft - 10" [attr.y]="tick.y + 4" text-anchor="end">{{ tick.label }}</text>
-                }
-                <line class="baseline" [attr.x1]="gridLeft" [attr.y1]="baseY" [attr.x2]="gridRight()" [attr.y2]="baseY"/>
-              </g>
+              <!-- Grid & Y-Axis (Numeric metric only, zero month concatenations) -->
+              @if (selectedType() !== 'donut') {
+                <g class="chart-grid">
+                  @for (tick of yTicks(); track tick.value) {
+                    <line class="grid-line" [attr.x1]="gridLeft" [attr.y1]="tick.y" [attr.x2]="gridRight()" [attr.y2]="tick.y"/>
+                    <text class="axis-label y-axis-label" [attr.x]="gridLeft - 10" [attr.y]="tick.y + 4" text-anchor="end">{{ tick.label }}</text>
+                  }
+                  <line class="baseline" [attr.x1]="gridLeft" [attr.y1]="baseY" [attr.x2]="gridRight()" [attr.y2]="baseY"/>
 
-              <!-- 3D Bar Chart -->
-              @if (selectedType() === '3d-bar') {
+                  <!-- Right Y-Axis for Pareto or Dual Axis -->
+                  @if (selectedType() === 'pareto') {
+                    @for (pct of [0, 25, 50, 75, 100]; track pct) {
+                      <text class="axis-label right-y-axis" [attr.x]="gridRight() + 10" [attr.y]="baseY - (pct / 100) * (baseY - plotTop) + 4">{{ pct }}%</text>
+                    }
+                    <!-- 80% Benchmark Line -->
+                    <line class="pareto-benchmark-line" [attr.x1]="gridLeft" [attr.y1]="baseY - 0.8 * (baseY - plotTop)" [attr.x2]="gridRight()" [attr.y2]="baseY - 0.8 * (baseY - plotTop)"/>
+                    <text class="pareto-80-label" [attr.x]="gridRight() - 30" [attr.y]="baseY - 0.8 * (baseY - plotTop) - 4">80% Threshold</text>
+                  }
+                </g>
+              }
+
+              <!-- ── A. LINE & MULTI-LINE RENDERER ── -->
+              @if (selectedType() === 'line' || selectedType() === 'multi-line') {
+                <g class="line-layer">
+                  @if (!isMultiSeries()) {
+                    <path class="clean-trend-line primary" [attr.d]="linePathD()" fill="none"/>
+                    @if (selectedType() === 'multi-line' && trendData().hasInvoiceCount) {
+                      <path class="clean-trend-line secondary" [attr.d]="countLinePathD()" fill="none"/>
+                    }
+                    @for (item of calculatedPoints(); track item.point.pointIndex) {
+                      <g
+                        class="data-point-group"
+                        [class.selected]="selectedMonth() === item.point.month"
+                        (click)="toggleMonthSelection(item.point)"
+                        (mouseenter)="onElementHover(item, $event)"
+                        (mouseleave)="onElementLeave()"
+                      >
+                        <circle class="point-halo" [attr.cx]="item.slotCenter" [attr.cy]="item.y" r="12"/>
+                        <circle class="point-outer primary" [attr.cx]="item.slotCenter" [attr.cy]="item.y" r="4.5"/>
+                        <circle class="point-inner primary" [attr.cx]="item.slotCenter" [attr.cy]="item.y" r="2.2"/>
+                        @if (selectedType() === 'multi-line' && item.countY !== undefined) {
+                          <circle class="point-outer secondary" [attr.cx]="item.slotCenter" [attr.cy]="item.countY" r="4"/>
+                        }
+                      </g>
+                    }
+                  } @else {
+                    @for (series of activeSeriesList(); track series.id) {
+                      <path
+                        class="clean-trend-line multi-series-line"
+                        [attr.d]="multiLinePathD(series)"
+                        [attr.stroke]="series.color"
+                        stroke-width="2.6"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        fill="none"
+                      />
+                    }
+                    @for (item of calculatedPoints(); track item.point.pointIndex) {
+                      <g
+                        class="data-point-group"
+                        [class.selected]="selectedMonth() === item.point.month"
+                        (click)="toggleMonthSelection(item.point)"
+                        (mouseenter)="onElementHover(item, $event)"
+                        (mouseleave)="onElementLeave()"
+                      >
+                        <circle class="point-halo" [attr.cx]="item.slotCenter" [attr.cy]="item.y" r="14"/>
+                        @for (series of activeSeriesList(); track series.id) {
+                          @if (getEntityPointY(item, series); as ptY) {
+                            <circle class="point-outer" [attr.cx]="item.slotCenter" [attr.cy]="ptY" r="4.5" fill="#ffffff" [attr.stroke]="series.color" stroke-width="2"/>
+                            <circle class="point-inner" [attr.cx]="item.slotCenter" [attr.cy]="ptY" r="2.2" [attr.fill]="series.color"/>
+                          }
+                        }
+                      </g>
+                    }
+                  }
+                </g>
+              }
+
+              <!-- ── B. AREA RENDERER ── -->
+              @if (selectedType() === 'area') {
+                <g class="area-layer">
+                  @if (!isMultiSeries()) {
+                    <path class="trend-area-path" [attr.d]="areaPathD()" fill="rgba(37, 99, 235, 0.18)"/>
+                    <path class="area-top-line" [attr.d]="linePathD()" fill="none"/>
+                    @for (item of calculatedPoints(); track item.point.pointIndex) {
+                      <g
+                        class="data-point-group"
+                        [class.selected]="selectedMonth() === item.point.month"
+                        (click)="toggleMonthSelection(item.point)"
+                        (mouseenter)="onElementHover(item, $event)"
+                        (mouseleave)="onElementLeave()"
+                      >
+                        <circle class="point-halo" [attr.cx]="item.slotCenter" [attr.cy]="item.y" r="12"/>
+                        <circle class="point-outer primary" [attr.cx]="item.slotCenter" [attr.cy]="item.y" r="4.5"/>
+                        <circle class="point-inner primary" [attr.cx]="item.slotCenter" [attr.cy]="item.y" r="2.2"/>
+                      </g>
+                    }
+                  } @else {
+                    @for (series of activeSeriesList(); track series.id) {
+                      <path
+                        class="trend-area-path"
+                        [attr.d]="multiAreaPathD(series)"
+                        [attr.fill]="getAlphaColor(series.color, 0.18)"
+                      />
+                      <path
+                        class="clean-trend-line multi-series-line"
+                        [attr.d]="multiLinePathD(series)"
+                        [attr.stroke]="series.color"
+                        stroke-width="2.5"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        fill="none"
+                      />
+                    }
+                    @for (item of calculatedPoints(); track item.point.pointIndex) {
+                      <g
+                        class="data-point-group"
+                        [class.selected]="selectedMonth() === item.point.month"
+                        (click)="toggleMonthSelection(item.point)"
+                        (mouseenter)="onElementHover(item, $event)"
+                        (mouseleave)="onElementLeave()"
+                      >
+                        <circle class="point-halo" [attr.cx]="item.slotCenter" [attr.cy]="item.y" r="14"/>
+                        @for (series of activeSeriesList(); track series.id) {
+                          @if (getEntityPointY(item, series); as ptY) {
+                            <circle class="point-outer" [attr.cx]="item.slotCenter" [attr.cy]="ptY" r="4.5" fill="#ffffff" [attr.stroke]="series.color" stroke-width="2"/>
+                            <circle class="point-inner" [attr.cx]="item.slotCenter" [attr.cy]="ptY" r="2.2" [attr.fill]="series.color"/>
+                          }
+                        }
+                      </g>
+                    }
+                  }
+                </g>
+              }
+
+              <!-- ── C. CLEAN RESPONSIVE BAR & GROUPED BAR RENDERER ── -->
+              @if (selectedType() === 'bar' || selectedType() === 'grouped-bar') {
                 <g class="bars-layer">
+                  @if (!isMultiSeries() && selectedType() === 'bar') {
+                    @for (item of calculatedPoints(); track item.point.pointIndex) {
+                      <g
+                        class="bar-column-group"
+                        [class.selected]="selectedMonth() === item.point.month"
+                        (click)="toggleMonthSelection(item.point)"
+                        (mouseenter)="onElementHover(item, $event)"
+                        (mouseleave)="onElementLeave()"
+                      >
+                        <rect
+                          class="bar-hitbox"
+                          [attr.x]="item.slotCenter - slotWidth() / 2"
+                          [attr.y]="plotTop"
+                          [attr.width]="slotWidth()"
+                          [attr.height]="baseY - plotTop + 24"
+                          fill="transparent"
+                          cursor="pointer"
+                        />
+                        <rect
+                          class="bar-hover-bg"
+                          [attr.x]="item.slotCenter - item.barWidth / 2 - 3"
+                          [attr.y]="plotTop"
+                          [attr.width]="item.barWidth + 6"
+                          [attr.height]="baseY - plotTop"
+                          rx="4"
+                        />
+                        <rect
+                          class="bar-front"
+                          [attr.x]="item.x"
+                          [attr.y]="item.y"
+                          [attr.width]="item.barWidth"
+                          [attr.height]="item.height"
+                          fill="#2563eb"
+                          rx="3"
+                        />
+                      </g>
+                    }
+                  } @else if (isMultiSeries()) {
+                    <!-- Grouped / Clustered Bars for Multi-Entity -->
+                    @for (item of calculatedPoints(); track item.point.pointIndex) {
+                      <g
+                        class="bar-column-group multi-group"
+                        [class.selected]="selectedMonth() === item.point.month"
+                        (click)="toggleMonthSelection(item.point)"
+                        (mouseenter)="onElementHover(item, $event)"
+                        (mouseleave)="onElementLeave()"
+                      >
+                        <rect
+                          class="bar-hitbox"
+                          [attr.x]="item.slotCenter - slotWidth() / 2"
+                          [attr.y]="plotTop"
+                          [attr.width]="slotWidth()"
+                          [attr.height]="baseY - plotTop + 24"
+                          fill="transparent"
+                          cursor="pointer"
+                        />
+                        <rect
+                          class="bar-hover-bg"
+                          [attr.x]="item.slotCenter - slotWidth() * 0.45"
+                          [attr.y]="plotTop"
+                          [attr.width]="slotWidth() * 0.9"
+                          [attr.height]="baseY - plotTop"
+                          rx="4"
+                        />
+                        @for (s of activeSeriesList(); track s.id; let sIdx = $index) {
+                          @if (getEntityBar(item, s, sIdx, activeSeriesList().length); as b) {
+                            <rect
+                              class="bar-front multi-entity-bar"
+                              [attr.x]="b.x"
+                              [attr.y]="b.y"
+                              [attr.width]="b.width"
+                              [attr.height]="b.height"
+                              [attr.fill]="s.color"
+                              rx="2.5"
+                            />
+                          }
+                        }
+                      </g>
+                    }
+                  } @else {
+                    <!-- Dual-metric grouped bar (amount + count) -->
+                    @for (item of calculatedPoints(); track item.point.pointIndex) {
+                      <g
+                        class="grouped-bar-slot"
+                        (mouseenter)="onElementHover(item, $event)"
+                        (mouseleave)="onElementLeave()"
+                        (click)="toggleMonthSelection(item.point)"
+                      >
+                        <rect
+                          [attr.x]="item.slotCenter - item.barWidth"
+                          [attr.y]="item.y"
+                          [attr.width]="item.barWidth * 0.9"
+                          [attr.height]="Math.max(baseY - item.y, 2)"
+                          fill="#2563eb"
+                          rx="2"
+                        />
+                        @if (item.countY !== undefined) {
+                          <rect
+                            [attr.x]="item.slotCenter + item.barWidth * 0.1"
+                            [attr.y]="item.countY"
+                            [attr.width]="item.barWidth * 0.9"
+                            [attr.height]="Math.max(baseY - item.countY, 2)"
+                            fill="#d97706"
+                            rx="2"
+                          />
+                        }
+                      </g>
+                    }
+                  }
+                </g>
+              }
+
+              <!-- ── D. STACKED BAR RENDERER ── -->
+              @if (selectedType() === 'stacked-bar') {
+                <g class="stacked-bars-layer">
                   @for (item of calculatedPoints(); track item.point.pointIndex) {
                     <g
-                      class="bar-column-group"
-                      [class.selected]="selectedMonth() === item.point.month"
-                      [class.dimmed]="selectedMonth() !== null && selectedMonth() !== item.point.month"
-                      (click)="toggleMonthSelection(item.point)"
+                      class="stacked-bar-slot"
                       (mouseenter)="onElementHover(item, $event)"
                       (mouseleave)="onElementLeave()"
+                      (click)="toggleMonthSelection(item.point)"
                     >
-                      <polygon class="bar-side" [attr.points]="getSideFacetPoints(item)" fill="url(#barSideGrad)"/>
-                      <rect class="bar-front" [attr.x]="item.x" [attr.y]="item.y"
-                        [attr.width]="item.barWidth" [attr.height]="Math.max(baseY - item.y, 2)"
-                        [attr.fill]="selectedMonth() === item.point.month ? 'url(#barFrontSelectedGrad)' : 'url(#barFrontGrad)'" rx="2"/>
-                      <polygon class="bar-top" [attr.points]="getTopCapPoints(item)"
-                        [attr.fill]="selectedMonth() === item.point.month ? 'url(#barTopSelectedGrad)' : 'url(#barTopGrad)'"
-                        stroke="rgba(255,255,255,0.6)" stroke-width="0.8"/>
-                      @if (selectedMonth() === item.point.month || hoveredPoint()?.point?.month === item.point.month) {
-                        <g class="bar-value-pill" [attr.transform]="'translate(' + (item.x + item.barWidth / 2 + 3) + ',' + (item.y - 18) + ')'">
-                          <rect x="-42" y="-10" width="84" height="20" rx="4" class="pill-bg"/>
-                          <text x="0" y="4" text-anchor="middle" class="pill-text">{{ formatCompactCurrency(item.point.amount) }}</text>
-                        </g>
+                      <rect
+                        class="bar-hitbox"
+                        [attr.x]="item.slotCenter - slotWidth() / 2"
+                        [attr.y]="plotTop"
+                        [attr.width]="slotWidth()"
+                        [attr.height]="baseY - plotTop + 24"
+                        fill="transparent"
+                        cursor="pointer"
+                      />
+                      @if (isMultiSeries()) {
+                        @for (seg of getStackedSegments(item, activeSeriesList()); track seg.seriesId) {
+                          <rect
+                            [attr.x]="item.x"
+                            [attr.y]="seg.y"
+                            [attr.width]="item.barWidth"
+                            [attr.height]="seg.height"
+                            [attr.fill]="seg.color"
+                            rx="1.5"
+                          />
+                        }
+                      } @else {
+                        <rect
+                          [attr.x]="item.x"
+                          [attr.y]="item.y"
+                          [attr.width]="item.barWidth"
+                          [attr.height]="Math.max(baseY - item.y, 2)"
+                          fill="#2563eb"
+                          rx="2"
+                        />
+                        @if (item.countY !== undefined) {
+                          <rect
+                            [attr.x]="item.x"
+                            [attr.y]="Math.max(item.y - 12, plotTop)"
+                            [attr.width]="item.barWidth"
+                            height="10"
+                            fill="#f59e0b"
+                            rx="2"
+                          />
+                        }
                       }
                     </g>
                   }
                 </g>
               }
 
-              <!-- Line Chart (Clean, no fill) -->
-              @if (selectedType() === 'line') {
-                <g class="line-layer">
-                  <path class="clean-trend-line" [attr.d]="linePathD()" fill="none"/>
-                  @for (item of calculatedPoints(); track item.point.pointIndex) {
+              <!-- ── F. SCATTER PLOT RENDERER (Volume vs. Amount) ── -->
+              @if (selectedType() === 'scatter') {
+                <g class="scatter-layer">
+                  @for (item of scatterPoints(); track item.point.pointIndex) {
                     <g
-                      class="data-point-group"
-                      [class.selected]="selectedMonth() === item.point.month"
-                      [class.dimmed]="selectedMonth() !== null && selectedMonth() !== item.point.month"
-                      (click)="toggleMonthSelection(item.point)"
+                      class="scatter-bubble-group"
                       (mouseenter)="onElementHover(item, $event)"
                       (mouseleave)="onElementLeave()"
+                      (click)="toggleMonthSelection(item.point)"
                     >
-                      <circle class="point-halo" [attr.cx]="item.x + item.barWidth / 2" [attr.cy]="item.y" r="12"/>
-                      <circle class="point-outer" [attr.cx]="item.x + item.barWidth / 2" [attr.cy]="item.y" r="5"/>
-                      <circle class="point-inner" [attr.cx]="item.x + item.barWidth / 2" [attr.cy]="item.y" r="2.5"/>
+                      <circle class="scatter-bubble" [attr.cx]="item.x" [attr.cy]="item.y" [attr.r]="item.r" fill="#2563eb" fill-opacity="0.65" stroke="#1d4ed8" stroke-width="1.5"/>
+                      <text class="scatter-label" [attr.x]="item.x" [attr.y]="item.y - item.r - 4" text-anchor="middle">{{ item.point.shortMonth }}</text>
                     </g>
                   }
                 </g>
               }
 
-              <!-- Area Chart (filled gradient + boundary line) -->
-              @if (selectedType() === 'area') {
-                <g class="area-layer">
-                  <path class="trend-area-path" [attr.d]="areaPathD()" fill="url(#areaTrendGrad)"/>
-                  <path class="area-top-line" [attr.d]="linePathD()" fill="none"/>
-                  @for (item of calculatedPoints(); track item.point.pointIndex) {
-                    <g
-                      class="data-point-group"
-                      [class.selected]="selectedMonth() === item.point.month"
-                      [class.dimmed]="selectedMonth() !== null && selectedMonth() !== item.point.month"
-                      (click)="toggleMonthSelection(item.point)"
-                      (mouseenter)="onElementHover(item, $event)"
-                      (mouseleave)="onElementLeave()"
-                    >
-                      <circle class="point-halo" [attr.cx]="item.x + item.barWidth / 2" [attr.cy]="item.y" r="12"/>
-                      <circle class="point-outer" [attr.cx]="item.x + item.barWidth / 2" [attr.cy]="item.y" r="5"/>
-                      <circle class="point-inner" [attr.cx]="item.x + item.barWidth / 2" [attr.cy]="item.y" r="2.5"/>
+              <!-- ── G. HISTOGRAM RENDERER (Amount Distribution) ── -->
+              @if (selectedType() === 'histogram') {
+                <g class="histogram-layer">
+                  @for (bin of histogramBins(); track bin.binIndex) {
+                    <g class="histogram-bin-group">
+                      <rect
+                        class="hist-bar"
+                        [attr.x]="getHistBinX(bin.binIndex)"
+                        [attr.y]="getHistBinY(bin.count)"
+                        [attr.width]="getHistBinWidth()"
+                        [attr.height]="Math.max(baseY - getHistBinY(bin.count), 2)"
+                        fill="#0284c7"
+                        rx="3"
+                      />
+                      <text class="hist-count-label" [attr.x]="getHistBinX(bin.binIndex) + getHistBinWidth() / 2" [attr.y]="getHistBinY(bin.count) - 6" text-anchor="middle">
+                        {{ bin.count }} ({{ bin.percent }}%)
+                      </text>
+                      <text class="hist-x-label" [attr.x]="getHistBinX(bin.binIndex) + getHistBinWidth() / 2" [attr.y]="baseY + 18" text-anchor="middle">
+                        {{ bin.label }}
+                      </text>
                     </g>
                   }
                 </g>
               }
 
-              <!-- X-Axis Labels -->
-              <g class="x-axis-layer">
-                @for (item of calculatedPoints(); track item.point.pointIndex) {
-                  <g
-                    class="x-label-group"
-                    [class.selected]="selectedMonth() === item.point.month"
-                    (click)="toggleMonthSelection(item.point)"
-                    cursor="pointer"
-                  >
-                    <text class="axis-label x-axis-label"
-                      [attr.x]="item.x + item.barWidth / 2 + 3"
-                      [attr.y]="baseY + 20"
-                      text-anchor="middle">
-                      {{ item.point.shortMonth }}
-                    </text>
-                    @if (selectedMonth() === item.point.month) {
-                      <rect [attr.x]="item.x + item.barWidth / 2 - 10 + 3" [attr.y]="baseY + 26"
-                        width="20" height="2.5" rx="1" class="label-active-indicator"/>
+              <!-- ── H. WATERFALL RENDERER (Period-over-Period Variance) ── -->
+              @if (selectedType() === 'waterfall') {
+                <g class="waterfall-layer">
+                  @for (step of waterfallSteps(); track $index) {
+                    <g class="waterfall-step-group">
+                      <rect
+                        class="wf-bar"
+                        [attr.x]="getWaterfallX($index)"
+                        [attr.y]="getWaterfallY(step)"
+                        [attr.width]="getWaterfallWidth()"
+                        [attr.height]="getWaterfallHeight(step)"
+                        [attr.fill]="step.isTotal ? '#2563eb' : (step.isPositive ? '#10b981' : '#ef4444')"
+                        rx="2"
+                      />
+                      <text class="wf-val-label" [attr.x]="getWaterfallX($index) + getWaterfallWidth() / 2" [attr.y]="getWaterfallY(step) - 6" text-anchor="middle">
+                        {{ step.changeFormatted }}
+                      </text>
+                      <text class="axis-label x-axis-label" [attr.x]="getWaterfallX($index) + getWaterfallWidth() / 2" [attr.y]="baseY + 18" text-anchor="middle">
+                        {{ step.shortLabel }}
+                      </text>
+                    </g>
+                  }
+                </g>
+              }
+
+              <!-- ── I. PARETO RENDERER (Ranked 80/20 Contribution) ── -->
+              @if (selectedType() === 'pareto') {
+                <g class="pareto-layer">
+                  @for (item of paretoItems(); track item.point.pointIndex) {
+                    <g class="pareto-bar-group" (mouseenter)="onElementHover(getParetoHover(item, $index), $event)" (mouseleave)="onElementLeave()">
+                      <rect
+                        class="pareto-bar"
+                        [attr.x]="getParetoX($index)"
+                        [attr.y]="getParetoY(item.amount)"
+                        [attr.width]="getParetoWidth()"
+                        [attr.height]="Math.max(baseY - getParetoY(item.amount), 2)"
+                        fill="#3b82f6"
+                        rx="2"
+                      />
+                      <text class="axis-label x-axis-label" [attr.x]="getParetoX($index) + getParetoWidth() / 2" [attr.y]="baseY + 18" text-anchor="middle">
+                        {{ item.point.shortMonth }}
+                      </text>
+                    </g>
+                  }
+                  <!-- Cumulative percentage curve -->
+                  <path class="pareto-curve" [attr.d]="paretoCurveD()" fill="none" stroke="#f59e0b" stroke-width="2.5"/>
+                  @for (item of paretoItems(); track item.point.pointIndex) {
+                    <circle [attr.cx]="getParetoX($index) + getParetoWidth() / 2" [attr.cy]="getParetoPctY(item.cumulativePercent)" r="3" fill="#f59e0b" stroke="#ffffff" stroke-width="1.5"/>
+                  }
+                </g>
+              }
+
+              <!-- ── J. DONUT RENDERER (Composition & Share) ── -->
+              @if (selectedType() === 'donut') {
+                <g class="donut-layer" transform="translate(40, 10)">
+                  <g class="donut-slices-group">
+                    @for (slice of donutSlices(); track slice.label) {
+                      <path
+                        [attr.d]="slice.pathD"
+                        [attr.fill]="slice.color"
+                        class="donut-slice"
+                        (mouseenter)="hoveredDonut.set(slice)"
+                        (mouseleave)="hoveredDonut.set(null)"
+                      />
+                    }
+                    <!-- Center Hole Content -->
+                    <circle cx="140" cy="135" r="54" fill="var(--card-surface)" stroke="var(--border-color)" stroke-width="1"/>
+                    <text x="140" y="130" text-anchor="middle" class="donut-center-total">{{ formatCompactCurrency(activeTotalAmount()) }}</text>
+                    <text x="140" y="146" text-anchor="middle" class="donut-center-sub">Total Spend</text>
+                  </g>
+                  <!-- Donut Legend Table on Right -->
+                  <g class="donut-legend" transform="translate(290, 20)">
+                    @for (slice of donutSlices(); track slice.label) {
+                      <g [attr.transform]="'translate(0, ' + ($index * 24) + ')'" class="donut-legend-row">
+                        <rect x="0" y="0" width="10" height="10" [attr.fill]="slice.color" rx="2"/>
+                        <text x="18" y="9" class="donut-legend-name">{{ slice.label }}</text>
+                        <text x="210" y="9" text-anchor="end" class="donut-legend-val">{{ formatCompactCurrency(slice.amount) }}</text>
+                        <text x="255" y="9" text-anchor="end" class="donut-legend-pct">{{ slice.percentage }}%</text>
+                      </g>
                     }
                   </g>
-                }
-              </g>
+                </g>
+              }
+
+              <!-- ── X-Axis Labels (Dates/Months, dynamically thinned on large sets) ── -->
+              @if (selectedType() !== 'histogram' && selectedType() !== 'donut' && selectedType() !== 'waterfall' && selectedType() !== 'pareto') {
+                <g class="x-axis-layer">
+                  @for (item of calculatedPoints(); track item.point.pointIndex) {
+                    @if (shouldRenderXLabel($index, calculatedPoints().length)) {
+                      <g
+                        class="x-label-group"
+                        [class.selected]="selectedMonth() === item.point.month"
+                        (click)="toggleMonthSelection(item.point)"
+                        cursor="pointer"
+                      >
+                        <text class="axis-label x-axis-label"
+                          [attr.x]="item.slotCenter"
+                          [attr.y]="baseY + 20"
+                          text-anchor="middle">
+                          {{ item.point.shortMonth }}
+                        </text>
+                        @if (selectedMonth() === item.point.month) {
+                          <rect [attr.x]="item.slotCenter - 10" [attr.y]="baseY + 26" width="20" height="2.5" rx="1" class="label-active-indicator"/>
+                        }
+                      </g>
+                    }
+                  }
+                </g>
+              }
             </svg>
           </div>
 
-          <!-- Floating Tooltip -->
+          <!-- Floating Interactive Tooltip -->
           @if (hoveredPoint()) {
             <div class="chart-tooltip" [style.left.px]="tooltipX()" [style.top.px]="tooltipY()">
               <div class="tooltip-header">
                 <span class="tooltip-month">{{ hoveredPoint()!.point.month }}</span>
-                <span class="tooltip-badge">{{ formatPercentOfMax(hoveredPoint()!.point.amount) }} of peak</span>
+                @if (!isMultiSeries()) {
+                  <span class="tooltip-badge">{{ formatPercentOfMax(hoveredPoint()!.point.amount) }} of peak</span>
+                }
               </div>
-              <div class="tooltip-amount-row">
-                <span class="tooltip-label">Invoice Total</span>
-                <span class="tooltip-amount">{{ hoveredPoint()!.point.rawAmount }}</span>
-              </div>
-              @if (hoveredPoint()!.point.invoiceCount) {
-                <div class="tooltip-count-row">
-                  <span class="tooltip-label">Volume</span>
-                  <span class="tooltip-count">{{ hoveredPoint()!.point.invoiceCount }}</span>
+
+              @if (isMultiSeries()) {
+                <div class="tooltip-series-list">
+                  @for (s of activeSeriesList(); track s.id) {
+                    <div class="tooltip-series-row">
+                      <span class="tooltip-series-indicator" [style.background]="s.color"></span>
+                      <span class="tooltip-series-name">{{ s.name }}</span>
+                      <span class="tooltip-series-val" [class.missing]="isPointMissing(hoveredPoint()!.point, s)">
+                        {{ getPointEntityValue(hoveredPoint()!.point, s) }}
+                      </span>
+                    </div>
+                  }
                 </div>
+              } @else {
+                <div class="tooltip-amount-row">
+                  <span class="tooltip-label">Invoice Amount</span>
+                  <span class="tooltip-amount">{{ hoveredPoint()!.point.rawAmount }}</span>
+                </div>
+                @if (hoveredPoint()!.point.invoiceCount) {
+                  <div class="tooltip-count-row">
+                    <span class="tooltip-label">Invoice Volume</span>
+                    <span class="tooltip-count">{{ hoveredPoint()!.point.invoiceCount }}</span>
+                  </div>
+                }
               }
             </div>
           }
         </div>
 
-        <!-- ── 5. MONTH FOCUS CARD ── -->
+        <!-- ── 7. MONTH FOCUS CARD ── -->
         @if (selectedPoint()) {
           <div class="month-focus-panel">
             <div class="focus-left">
@@ -409,12 +1013,12 @@ interface MonthOption {
                 </div>
                 @if (selectedPoint()!.invoiceCount) {
                   <div class="metric-box">
-                    <span class="metric-lbl">Invoice Count</span>
+                    <span class="metric-lbl">Invoice Volume</span>
                     <span class="metric-val secondary">{{ selectedPoint()!.invoiceCount }}</span>
                   </div>
                 }
                 <div class="metric-box">
-                  <span class="metric-lbl">Share of Active Range</span>
+                  <span class="metric-lbl">Share of Filtered Total</span>
                   <span class="metric-val tertiary">{{ getShareOfTotal(selectedPoint()!.amount) }}</span>
                 </div>
               </div>
@@ -434,429 +1038,998 @@ interface MonthOption {
     }
   `,
   styles: [`
-    :host { display: block; width: 100%; margin-top: 14px; }
+    :host { display: block; width: 100%; margin-top: 14px; position: relative; }
 
-    /* ── Confirmation Prompt ── */
-    .trend-prompt-card {
-      background: var(--card-surface); border: 1px solid var(--border-color);
-      border-radius: var(--radius-card); padding: 14px 18px;
-      display: flex; align-items: center; justify-content: space-between;
-      gap: 16px; flex-wrap: wrap; box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    .trend-clarification-card {
+      background: var(--card-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-card);
+      padding: 16px 20px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
       animation: fadeIn 200ms ease;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
     }
-    .prompt-left { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 240px; }
-    .prompt-icon {
-      width: 32px; height: 32px; border-radius: var(--radius-base);
-      background: oklch(0.58 0.16 256 / 0.1); border: 1px solid oklch(0.58 0.16 256 / 0.25);
-      color: var(--primary-accent); display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    .clarification-header { display: flex; align-items: flex-start; gap: 12px; }
+    .clarification-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: var(--radius-base);
+      background: oklch(0.58 0.16 256 / 0.1);
+      border: 1px solid oklch(0.58 0.16 256 / 0.25);
+      color: var(--primary-accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-top: 2px;
     }
-    .prompt-text-group { display: flex; flex-direction: column; gap: 2px; }
-    .prompt-title { font-size: 0.88rem; font-weight: 700; color: var(--foreground); }
-    .prompt-desc { font-size: 0.78rem; color: var(--muted-text); line-height: 1.4; }
-    .prompt-actions { display: flex; align-items: center; gap: 8px; }
-    .prompt-btn {
-      display: inline-flex; align-items: center; gap: 6px;
-      padding: 6px 14px; border-radius: var(--radius-base);
-      font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: all 0.15s ease;
-      &.confirm-btn {
-        background: var(--primary-accent); color: #fff;
-        border: 1px solid transparent; box-shadow: 0 1px 2px rgba(0,0,0,0.08);
-        &:hover { opacity: 0.92; }
-      }
-      &.decline-btn {
-        background: var(--secondary-surface); border: 1px solid var(--border-color); color: var(--muted-text);
-        &:hover { background: var(--card-surface); color: var(--foreground); }
-      }
+    .clarification-text-group { display: flex; flex-direction: column; gap: 3px; }
+    .clarification-title { font-size: 0.9rem; font-weight: 700; color: var(--foreground); }
+    .clarification-desc { font-size: 0.8rem; color: var(--muted-text); line-height: 1.45; strong { color: var(--foreground); } }
+    .clarification-options { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .clarification-pill-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 13px;
+      border-radius: var(--radius-pill);
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      background: var(--secondary-surface);
+      border: 1px solid var(--border-color);
+      color: var(--foreground);
+      transition: all 0.15s ease;
+      &:hover { background: var(--card-surface); border-color: var(--primary-accent); color: var(--primary-accent); }
+      &.primary { background: var(--primary-accent); border-color: var(--primary-accent); color: #fff; &:hover { opacity: 0.92; } }
+      &.custom { border-style: dashed; }
     }
 
-    /* ── Declined Banner ── */
     .trend-declined-card {
-      background: var(--secondary-surface); border: 1px dashed var(--border-color);
-      border-radius: var(--radius-base); padding: 8px 14px;
-      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      background: var(--secondary-surface);
+      border: 1px dashed var(--border-color);
+      border-radius: var(--radius-base);
+      padding: 8px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
     }
     .declined-info { display: flex; align-items: center; gap: 8px; font-size: 0.78rem; color: var(--muted-text); }
     .reopen-chart-btn {
-      background: transparent; border: 1px solid var(--border-color);
-      border-radius: 4px; padding: 3px 8px; font-size: 0.74rem; font-weight: 600;
-      color: var(--primary-accent); cursor: pointer;
+      background: transparent;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      padding: 3px 8px;
+      font-size: 0.74rem;
+      font-weight: 600;
+      color: var(--primary-accent);
+      cursor: pointer;
       &:hover { background: var(--card-surface); }
     }
 
-    /* ── Trend Card ── */
     .trend-card {
-      background: var(--card-surface); border: 1px solid var(--border-color);
-      border-radius: var(--radius-card); padding: 16px 20px 14px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.04); position: relative; animation: fadeIn 250ms ease;
+      background: var(--card-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-card);
+      padding: 16px 20px 14px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+      position: relative;
+      animation: fadeIn 250ms ease;
     }
 
-    /* ── Header ── */
     .chart-header {
-      display: flex; align-items: center; justify-content: space-between;
-      gap: 12px; flex-wrap: wrap; margin-bottom: 10px; padding-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+      padding-bottom: 8px;
       border-bottom: 1px solid var(--border-color);
     }
     .header-left { display: flex; align-items: center; gap: 10px; }
     .metric-title-wrap { display: flex; align-items: flex-start; gap: 10px; }
     .chart-icon-box {
-      width: 28px; height: 28px; border-radius: var(--radius-base);
-      background: var(--secondary-surface); border: 1px solid var(--border-color);
-      color: var(--primary-accent); display: flex; align-items: center; justify-content: center;
-      flex-shrink: 0; margin-top: 2px;
+      width: 28px;
+      height: 28px;
+      border-radius: var(--radius-base);
+      background: var(--secondary-surface);
+      border: 1px solid var(--border-color);
+      color: var(--primary-accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-top: 2px;
     }
-    .metric-title { font-size: 0.92rem; font-weight: 700; color: var(--foreground); margin: 0 0 4px 0; letter-spacing: -0.01em; }
+    .metric-title { font-size: 0.94rem; font-weight: 700; color: var(--foreground); margin: 0 0 4px 0; letter-spacing: -0.01em; }
     .metric-meta-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
     .meta-pill {
-      font-size: 0.72rem; font-weight: 500; padding: 2px 8px;
-      border-radius: var(--radius-pill); background: var(--secondary-surface);
-      border: 1px solid var(--border-color); color: var(--text-secondary);
+      font-size: 0.72rem;
+      font-weight: 500;
+      padding: 2px 8px;
+      border-radius: var(--radius-pill);
+      background: var(--secondary-surface);
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
       &.highlight {
-        background: oklch(0.58 0.16 256 / 0.1); border-color: oklch(0.58 0.16 256 / 0.25);
-        color: oklch(0.48 0.15 256); font-weight: 600;
+        background: oklch(0.58 0.16 256 / 0.1);
+        border-color: oklch(0.58 0.16 256 / 0.25);
+        color: oklch(0.48 0.15 256);
+        font-weight: 600;
       }
       &.count-pill { color: var(--muted-text); }
     }
-    .header-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .header-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; position: relative; }
 
-    /* ── Filters Bar ── */
+    .chart-catalog-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+      padding: 4px 6px;
+      background: var(--secondary-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-base);
+      overflow-x: auto;
+      scrollbar-width: thin;
+    }
+    .catalog-label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--muted-text);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      padding-left: 4px;
+      flex-shrink: 0;
+    }
+    .catalog-tabs-container { display: flex; align-items: center; gap: 4px; flex-wrap: nowrap; }
+    .catalog-tab-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 9px;
+      border-radius: 4px;
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--muted-text);
+      font-size: 0.74rem;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.15s ease;
+      &:hover:not(.active) {
+        color: var(--foreground);
+        background: var(--card-surface);
+        border-color: var(--border-color);
+      }
+      &.active {
+        background: var(--card-surface);
+        border-color: var(--primary-accent);
+        color: var(--primary-accent);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+      }
+    }
+
     .filters-bar {
-      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-      margin-bottom: 12px; padding: 6px 10px;
-      background: var(--secondary-surface); border: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+      padding: 6px 10px;
+      background: var(--secondary-surface);
+      border: 1px solid var(--border-color);
       border-radius: var(--radius-base);
     }
-    .filter-item { display: inline-flex; align-items: center; gap: 5px; }
+    .presets-group { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+    .preset-pill-btn {
+      padding: 3px 8px;
+      border-radius: 4px;
+      background: var(--card-surface);
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      font-size: 0.72rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      &:hover { border-color: var(--primary-accent); color: var(--primary-accent); }
+      &.active {
+        background: oklch(0.58 0.16 256 / 0.12);
+        border-color: var(--primary-accent);
+        color: var(--primary-accent);
+      }
+    }
+    .filter-divider { width: 1px; height: 18px; background: var(--border-color); margin: 0 2px; }
+    .filter-item { display: inline-flex; align-items: center; gap: 5px; position: relative; }
     .filter-label { font-size: 0.74rem; font-weight: 600; color: var(--muted-text); }
-    .select-pill-wrap {
-      position: relative; display: inline-flex; align-items: center;
-      background: var(--card-surface); border: 1px solid var(--border-color);
-      border-radius: 4px; padding: 0 6px; height: 26px; gap: 4px; transition: all 0.15s ease;
-      &:hover, &:focus-within { border-color: var(--primary-accent); }
+
+    .picker-trigger-wrap { position: relative; }
+    .picker-trigger-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 8px;
+      height: 26px;
+      background: var(--card-surface);
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      color: var(--foreground);
+      font-size: 0.74rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      &:hover, &.active { border-color: var(--primary-accent); color: var(--primary-accent); }
     }
-    .select-icon { color: var(--primary-accent); flex-shrink: 0; }
-    .filter-select {
-      appearance: none; -webkit-appearance: none; background: transparent;
-      border: none; outline: none; color: var(--foreground);
-      font-size: 0.74rem; font-weight: 600; cursor: pointer;
-      padding: 0 14px 0 2px; font-family: var(--font-sans);
+    .picker-icon { color: var(--primary-accent); flex-shrink: 0; }
+    .picker-chevron { color: var(--muted-text); }
+    .calendar-popover {
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0;
+      background: var(--card-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-base);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+      z-index: 70;
+      padding: 12px;
+      width: 260px;
+      animation: fadeIn 150ms ease;
     }
-    .select-chevron { position: absolute; right: 5px; pointer-events: none; color: var(--muted-text); }
+    .popover-header {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      margin-bottom: 8px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .popover-title { font-size: 0.78rem; font-weight: 700; color: var(--foreground); }
+    .popover-bounds { font-size: 0.7rem; color: var(--muted-text); }
+    .calendar-years-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 220px;
+      overflow-y: auto;
+      scrollbar-width: thin;
+    }
+    .year-block { display: flex; flex-direction: column; gap: 4px; }
+    .year-title { font-size: 0.72rem; font-weight: 700; color: var(--primary-accent); }
+    .months-chips-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+    .month-chip-btn {
+      padding: 3px 0;
+      text-align: center;
+      border-radius: 3px;
+      background: var(--secondary-surface);
+      border: 1px solid transparent;
+      color: var(--foreground);
+      font-size: 0.7rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.12s ease;
+      &:hover:not(:disabled) { background: oklch(0.58 0.16 256 / 0.15); color: var(--primary-accent); }
+      &.active { background: var(--primary-accent); color: #fff; }
+      &:disabled { opacity: 0.3; cursor: not-allowed; background: transparent; }
+    }
+
     .reset-range-btn {
-      display: inline-flex; align-items: center; gap: 4px;
-      background: transparent; border: 1px dashed var(--border-color);
-      border-radius: 4px; padding: 3px 7px; font-size: 0.72rem; font-weight: 600;
-      color: var(--text-secondary); cursor: pointer; margin-left: auto; transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: transparent;
+      border: 1px dashed var(--border-color);
+      border-radius: 4px;
+      padding: 3px 7px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      cursor: pointer;
+      margin-left: auto;
+      transition: all 0.15s ease;
       &:hover { border-color: var(--primary-accent); color: var(--primary-accent); background: var(--card-surface); }
     }
 
-    /* ── Controls ── */
-    .control-group {
-      display: inline-flex; align-items: center; background: var(--secondary-surface);
-      border: 1px solid var(--border-color); border-radius: var(--radius-base); padding: 2px; gap: 2px;
+    .chart-legend-row { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; padding: 4px 6px; flex-wrap: wrap; }
+    .legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 0.74rem; font-weight: 600; color: var(--foreground); cursor: default; }
+    .interactive-legend-item {
+      cursor: pointer;
+      background: var(--card-surface);
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      padding: 3px 8px;
+      transition: all 0.15s ease;
+      &:hover { border-color: var(--primary-accent); }
+      &.dimmed { opacity: 0.45; text-decoration: line-through; }
     }
-    .zoom-group .ctrl-btn {
-      display: inline-flex; align-items: center; justify-content: center;
-      padding: 4px 8px; border-radius: 4px; background: transparent; border: none;
-      color: var(--muted-text); font-size: 0.74rem; font-weight: 600; cursor: pointer; transition: all 0.15s ease;
+    .legend-color-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .legend-color-line { width: 14px; height: 0; }
+    .legend-meta { font-size: 0.7rem; color: var(--muted-text); font-weight: 500; }
+
+    .control-group {
+      display: inline-flex;
+      align-items: center;
+      background: var(--secondary-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-base);
+      padding: 2px;
+      gap: 2px;
+      position: relative;
+    }
+    .zoom-group .ctrl-btn, .export-group .ctrl-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      background: transparent;
+      border: none;
+      color: var(--muted-text);
+      font-size: 0.74rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
       &:hover:not(:disabled) { background: var(--card-surface); color: var(--foreground); }
       &:disabled { opacity: 0.35; cursor: not-allowed; }
-      &.reset-btn { min-width: 40px; font-family: var(--font-mono); font-variant-numeric: tabular-nums; &.active { color: var(--primary-accent); } }
-    }
-    .chart-type-group .chart-tab-btn {
-      display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px;
-      border-radius: 4px; background: transparent; border: none;
-      color: var(--muted-text); font-size: 0.76rem; font-weight: 600; cursor: pointer; transition: all 0.15s ease;
-      &:hover:not(.active) { color: var(--foreground); }
-      &.active { background: var(--card-surface); color: var(--primary-accent); box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+      &.active { background: var(--card-surface); color: var(--primary-accent); }
+      &.reset-btn {
+        min-width: 40px;
+        font-family: var(--font-mono);
+        font-variant-numeric: tabular-nums;
+        &.active { color: var(--primary-accent); }
+      }
     }
 
-    /* ── Chart Viewport (Horizontal Scroll + Mouse Zoom) ── */
+    .export-dropdown-menu {
+      position: absolute;
+      top: calc(100% + 4px);
+      right: 0;
+      background: var(--card-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-base);
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+      z-index: 60;
+      display: flex;
+      flex-direction: column;
+      padding: 4px;
+      min-width: 170px;
+      animation: fadeIn 150ms ease;
+    }
+    .dropdown-opt-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 4px;
+      background: transparent;
+      border: none;
+      color: var(--foreground);
+      font-size: 0.74rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: left;
+      transition: background 0.12s ease;
+      &:hover { background: var(--secondary-surface); color: var(--primary-accent); }
+    }
+
     .chart-viewport {
-      position: relative; width: 100%; overflow-x: auto; overflow-y: hidden;
-      cursor: crosshair; border-radius: var(--radius-base); outline: none;
-      scrollbar-width: thin; scrollbar-color: var(--border-color) transparent;
-      &::-webkit-scrollbar { height: 5px; }
-      &::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 4px; }
+      position: relative;
+      width: 100%;
+      overflow-x: auto;
+      overflow-y: hidden;
+      cursor: crosshair;
+      border-radius: var(--radius-base);
+      outline: none;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border-color) transparent;
+      &::-webkit-scrollbar { height: 6px; }
+      &::-webkit-scrollbar-thumb {
+        background: var(--border-color);
+        border-radius: 4px;
+        &:hover { background: oklch(0.7 0.015 260); }
+      }
     }
-    .svg-container { width: 100%; transition: min-width 0.12s ease; }
-    .trend-svg { width: 100%; height: 280px; display: block; }
+    .svg-container { width: 100%; }
+    .trend-svg { width: 100%; height: 290px; display: block; }
 
-    /* ── Grid & Axes ── */
     .grid-line { stroke: var(--border-color); stroke-width: 1; stroke-dasharray: 4 4; }
     .baseline { stroke: oklch(0.8 0.015 260); stroke-width: 1.5; }
-    .axis-label { font-size: 10.5px; font-weight: 500; fill: var(--muted-text); user-select: none; font-family: var(--font-mono); }
-    .x-axis-label { font-size: 10.5px; font-weight: 600; font-family: var(--font-sans); transition: fill 0.15s ease; }
+    .axis-label {
+      font-size: 10.5px;
+      font-weight: 500;
+      fill: var(--muted-text);
+      user-select: none;
+      font-family: var(--font-mono);
+    }
+    .x-axis-label { font-size: 10px; font-weight: 600; font-family: var(--font-sans); }
     .x-label-group {
       &:hover .x-axis-label, &.selected .x-axis-label { fill: var(--primary-accent); font-weight: 700; }
     }
     .label-active-indicator { fill: var(--primary-accent); }
 
-    /* ── 3D Bar ── */
-    .bar-column-group {
-      cursor: pointer; transition: opacity 0.15s ease;
-      &.dimmed { opacity: 0.35; }
-      &:hover:not(.dimmed) .bar-front { filter: brightness(1.06); }
-      &.selected { opacity: 1; .bar-front { stroke: var(--primary-accent); stroke-width: 1.5; } }
-    }
-    .bar-front, .bar-top, .bar-side { transition: all 0.15s ease; }
-    .bar-value-pill {
-      pointer-events: none;
-      .pill-bg { fill: var(--card-surface); stroke: var(--border-color); stroke-width: 1; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.08)); }
-      .pill-text { font-size: 10px; font-weight: 700; fill: var(--foreground); font-family: var(--font-mono); }
-    }
+    .clean-trend-line.primary { stroke: #2563eb; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+    .clean-trend-line.secondary { stroke: #d97706; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 3 3; }
+    .area-top-line { stroke: #2563eb; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+    .trend-area-path { fill: rgba(37, 99, 235, 0.18); opacity: 1; }
 
-    /* ── Line Chart (clean, no fill) ── */
-    .clean-trend-line { stroke: oklch(0.58 0.16 256); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
-
-    /* ── Area Chart (filled gradient) ── */
-    .trend-area-path { opacity: 0.95; }
-    .area-top-line { stroke: oklch(0.52 0.17 256); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
-
-    /* ── Data Points (Line & Area) ── */
     .data-point-group {
-      cursor: pointer; transition: opacity 0.15s ease;
-      &.dimmed { opacity: 0.35; }
-      .point-halo { fill: oklch(0.58 0.16 256 / 0.18); opacity: 0; transition: opacity 0.15s ease, r 0.15s ease; }
-      .point-outer { fill: #fff; stroke: oklch(0.58 0.16 256); stroke-width: 2.5; transition: all 0.15s ease; }
-      .point-inner { fill: oklch(0.58 0.16 256); transition: all 0.15s ease; }
-      &:hover, &.selected {
-        .point-halo { opacity: 1; r: 14; }
-        .point-outer { stroke: var(--primary-accent); r: 6.5; }
-        .point-inner { fill: var(--primary-accent); }
+      cursor: pointer;
+      .point-halo { fill: #2563eb; fill-opacity: 0; transition: fill-opacity 0.15s ease, r 0.15s ease; }
+      .point-outer.primary { fill: #fff; stroke: #2563eb; stroke-width: 2.2; }
+      .point-inner.primary { fill: #2563eb; }
+      .point-outer.secondary { fill: #fff; stroke: #d97706; stroke-width: 2; }
+      &:hover, &.selected { .point-halo { fill-opacity: 0.18; r: 14; } }
+    }
+
+    .bars-layer {
+      animation: barFadeIn 250ms ease-out;
+    }
+    @keyframes barFadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    .bar-column-group {
+      cursor: pointer;
+      .bar-hitbox { pointer-events: all; }
+      .bar-hover-bg {
+        fill: oklch(0.58 0.16 256 / 0.08);
+        opacity: 0;
+        transition: opacity 0.15s ease;
+        pointer-events: none;
+      }
+      &:hover .bar-hover-bg { opacity: 1; }
+      .bar-front {
+        fill: #2563eb;
+        transition: fill 0.15s ease, filter 0.15s ease;
+      }
+      &:hover .bar-front {
+        fill: #1d4ed8;
+        filter: brightness(1.1) drop-shadow(0 2px 6px rgba(37, 99, 235, 0.4));
+      }
+      &.selected .bar-front {
+        fill: #1e40af;
+        stroke: #93c5fd;
+        stroke-width: 1.5;
+        filter: drop-shadow(0 0 6px rgba(37, 99, 235, 0.5));
       }
     }
 
-    /* ── Tooltip ── */
+
     .chart-tooltip {
-      position: absolute; transform: translate(-50%, -105%); pointer-events: none;
-      z-index: 50; background: var(--card-surface); border: 1px solid var(--border-color);
-      border-radius: var(--radius-base); padding: 8px 12px;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.08); min-width: 160px;
+      position: absolute;
+      transform: translate(-50%, -105%);
+      pointer-events: none;
+      z-index: 50;
+      background: var(--card-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-base);
+      padding: 8px 12px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+      min-width: 160px;
     }
     .tooltip-header {
-      display: flex; align-items: center; justify-content: space-between; gap: 8px;
-      margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 6px;
+      padding-bottom: 4px;
+      border-bottom: 1px solid var(--border-color);
     }
     .tooltip-month { font-size: 0.76rem; font-weight: 700; color: var(--foreground); }
     .tooltip-badge {
-      font-size: 0.68rem; font-weight: 600; color: oklch(0.48 0.15 256);
-      background: oklch(0.58 0.16 256 / 0.1); padding: 1px 6px; border-radius: var(--radius-pill);
+      font-size: 0.68rem;
+      font-weight: 600;
+      color: oklch(0.48 0.15 256);
+      background: oklch(0.58 0.16 256 / 0.1);
+      padding: 1px 6px;
+      border-radius: var(--radius-pill);
+    }
+    .tooltip-series-list {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .tooltip-series-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 0.74rem;
+    }
+    .tooltip-series-indicator {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      margin-right: 4px;
+    }
+    .tooltip-series-name {
+      color: var(--muted-text);
+      flex: 1;
+      text-align: left;
+    }
+    .tooltip-series-val {
+      font-weight: 700;
+      color: var(--foreground);
+      font-family: var(--font-mono);
+      &.missing {
+        color: var(--muted-text);
+        font-style: italic;
+        font-weight: normal;
+      }
     }
     .tooltip-amount-row, .tooltip-count-row {
-      display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 0.76rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 0.76rem;
     }
     .tooltip-label { color: var(--muted-text); }
-    .tooltip-amount { font-weight: 700; color: var(--foreground); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+    .tooltip-amount { font-weight: 700; color: var(--foreground); font-family: var(--font-mono); }
     .tooltip-count { font-weight: 600; color: var(--text-secondary); font-family: var(--font-mono); }
 
-    /* ── Focus Panel ── */
     .month-focus-panel {
-      margin-top: 12px; padding: 10px 14px; background: var(--secondary-surface);
-      border: 1px solid var(--border-color); border-radius: var(--radius-base);
-      display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+      margin-top: 12px;
+      padding: 10px 14px;
+      background: var(--secondary-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-base);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
     }
     .focus-left { display: flex; flex-direction: column; gap: 4px; }
     .focus-badge {
-      display: inline-flex; align-items: center; gap: 6px; font-size: 0.7rem; font-weight: 600;
-      color: var(--primary-accent); text-transform: uppercase; letter-spacing: 0.04em;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: var(--primary-accent);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
     }
-    .pulse-indicator { width: 6px; height: 6px; border-radius: 50%; background: oklch(0.58 0.16 256); }
+    .pulse-indicator { width: 6px; height: 6px; border-radius: 50%; background: #2563eb; }
     .focus-month-title { font-size: 0.98rem; font-weight: 700; color: var(--foreground); margin: 0; }
     .focus-metrics-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 2px; }
     .metric-box { display: flex; flex-direction: column; }
     .metric-lbl { font-size: 0.7rem; color: var(--muted-text); font-weight: 500; }
     .metric-val {
-      font-size: 0.9rem; font-weight: 700; font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+      font-size: 0.9rem;
+      font-weight: 700;
+      font-family: var(--font-mono);
       &.primary { color: var(--foreground); }
-      &.secondary { color: var(--text-secondary); }
-      &.tertiary { color: oklch(0.48 0.15 256); }
+      &.secondary { color: #d97706; }
+      &.tertiary { color: #059669; }
     }
     .focus-right { display: flex; align-items: center; }
     .reset-selection-btn {
-      display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px;
-      border-radius: var(--radius-base); background: var(--card-surface);
-      border: 1px solid var(--border-color); color: var(--text-secondary);
-      font-size: 0.76rem; font-weight: 600; cursor: pointer; transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 5px 10px;
+      border-radius: var(--radius-base);
+      background: var(--card-surface);
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      font-size: 0.76rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
       &:hover { border-color: var(--primary-accent); color: var(--primary-accent); }
     }
 
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
   `]
 })
 export class TrendChartComponent {
   readonly trendData = input.required<TrendSeries>();
+  readonly userQuery = input<string>('');
 
-  // null = pending confirmation, true = show, false = hidden
   readonly isConfirmed = signal<boolean | null>(null);
+  readonly isClarified = signal<boolean>(false);
 
-  readonly selectedType = signal<ChartType>('3d-bar');
-  readonly selectedPeriodId = signal<string>('');
+  readonly selectedType = signal<ChartType>('line');
+  readonly activePreset = signal<'all' | 'latest12' | 'latest24' | 'currentYear' | 'prevYear' | 'custom' | null>(null);
 
-  /**
-   * From/To are tracked by pointIndex (always unique — unlike sortKey which can be 0 for all).
-   * -1 means "not yet set".
-   */
   readonly selectedFromIdx = signal<number>(-1);
-  readonly selectedToIdx   = signal<number>(-1);
+  readonly selectedToIdx = signal<number>(-1);
+
+  readonly isFromPickerOpen = signal<boolean>(false);
+  readonly isToPickerOpen = signal<boolean>(false);
+  readonly isDownloadMenuOpen = signal<boolean>(false);
 
   readonly selectedMonth = signal<string | null>(null);
   readonly hoveredPoint = signal<{ point: TrendDataPoint; x: number; y: number } | null>(null);
+  readonly hoveredSeries = signal<string | null>(null);
+  readonly hoveredDonut = signal<DonutSlice | null>(null);
   readonly zoomLevel = signal<number>(1.0);
+
   readonly tooltipX = signal<number>(0);
   readonly tooltipY = signal<number>(0);
 
+  readonly hiddenSeriesIds = signal<Set<string>>(new Set());
+
+  readonly isMultiSeries = computed<boolean>(() => {
+    return (this.trendData().seriesList?.length || 0) >= 2;
+  });
+
+  readonly activeSeriesList = computed<DataSeries[]>(() => {
+    const list = this.trendData().seriesList || [];
+    const hidden = this.hiddenSeriesIds();
+    return list.filter(s => !hidden.has(s.id));
+  });
+
   readonly chartCard = viewChild<ElementRef<HTMLDivElement>>('chartCard');
-  readonly viewport  = viewChild<ElementRef<HTMLDivElement>>('viewport');
+  readonly viewport = viewChild<ElementRef<HTMLDivElement>>('viewport');
+  readonly chartSvg = viewChild<ElementRef<SVGSVGElement>>('chartSvg');
 
   readonly Math = Math;
 
   readonly gridLeft = 65;
-  readonly plotTop  = 36;
-  readonly baseY    = 236;
-  readonly depthDx  = 6;
-  readonly depthDy  = -5;
+  readonly plotTop = 36;
+  readonly baseY = 236;
+
+  readonly queryAnalysis = computed<UserQueryAnalysis>(() => {
+    return analyzeUserQuery(this.userQuery(), this.trendData().points);
+  });
+
+  readonly suitableTypes = computed<ChartTypeMeta[]>(() => {
+    return getSuitableChartTypes(this.trendData(), this.userQuery()).suitableTypes;
+  });
+
+  private _hasInitialized = false;
 
   constructor() {
-    // Sync period & from/to whenever trendData arrives or period changes
     effect(() => {
       const data = this.trendData();
-      if (!data?.periodOptions?.length) return;
+      if (!data?.points?.length) return;
+      if (this._hasInitialized) return;
 
-      const currentId = this.selectedPeriodId();
-      const isValid = data.periodOptions.some(o => o.id === currentId);
-      if (!isValid) {
-        const defaultId = data.defaultPeriodId || data.periodOptions[0].id;
-        this.selectedPeriodId.set(defaultId);
-        this._syncFromToForPeriod(defaultId, data);
+      const analysis = this.queryAnalysis();
+      const suitability = getSuitableChartTypes(data, this.userQuery());
+
+      // Set recommended default chart type only on first initialization
+      this.selectedType.set(suitability.defaultType);
+
+      // If user specified an explicit date range:
+      if (analysis.explicitRangeFound && analysis.matchedFromIndex !== undefined && analysis.matchedToIndex !== undefined) {
+        this.selectedFromIdx.set(analysis.matchedFromIndex);
+        this.selectedToIdx.set(analysis.matchedToIndex);
+        this.activePreset.set('custom');
+        this.isClarified.set(true);
+        this.isConfirmed.set(true);
+        this._hasInitialized = true;
+        return;
       }
+
+      // If dataset <= 12 points, no ambiguity:
+      if (!analysis.isAmbiguous) {
+        this.selectedFromIdx.set(data.points[0].pointIndex);
+        this.selectedToIdx.set(data.points[data.points.length - 1].pointIndex);
+        this.activePreset.set('all');
+        this.isClarified.set(true);
+        this.isConfirmed.set(true);
+        this._hasInitialized = true;
+        return;
+      }
+
+      // Otherwise ambiguous -> initialize default indices to full range
+      this.selectedFromIdx.set(data.points[0].pointIndex);
+      this.selectedToIdx.set(data.points[data.points.length - 1].pointIndex);
+      this.activePreset.set('all');
+      this._hasInitialized = true;
     });
   }
 
-  confirmChart(show: boolean): void { this.isConfirmed.set(show); }
+  // ─── Initial Clarification Handlers ────────────────────────────────────────
 
-  // ─── Period options ───────────────────────────────────────────────────────
+  chooseInitialOption(choice: 'all' | 'latest12' | 'latest24' | 'custom'): void {
+    const pts = this.trendData().points;
+    if (!pts.length) return;
 
-  readonly periodOptions = computed<YearPeriodOption[]>(() => this.trendData().periodOptions || []);
-
-  readonly activePeriodOption = computed<YearPeriodOption | null>(() => {
-    const opts = this.periodOptions();
-    const pid  = this.selectedPeriodId();
-    return opts.find(o => o.id === pid) || opts[0] || null;
-  });
-
-  // ─── ALL months within the selected year period (never filtered by from/to) ──
-
-  readonly availablePeriodMonths = computed<TrendDataPoint[]>(() => {
-    const data = this.trendData();
-    const opt  = this.activePeriodOption();
-    if (!opt) return data.points;
-
-    if (opt.id === 'all') return data.points;
-
-    // Use minPointIndex / maxPointIndex from the period option (positional, always reliable)
-    return data.points.slice(opt.minPointIndex, opt.maxPointIndex + 1);
-  });
-
-  // ─── From/To dropdown options ─────────────────────────────────────────────
-
-  /**
-   * From options = available period months from the starting year (year1) of the range.
-   * Tracked by pointIndex (unique integer) — never by sortKey.
-   */
-  readonly fromMonthOptions = computed<MonthOption[]>(() => {
-    const periodPts = this.availablePeriodMonths();
-    const opt = this.activePeriodOption();
-    if (!opt || !opt.years || opt.years.length < 2) {
-      return periodPts.map(p => ({
-        pointIndex: p.pointIndex,
-        month: p.month,
-        shortMonth: p.shortMonth,
-        sortKey: p.sortKey
-      }));
-    }
-    const year1 = opt.years[0];
-    const year1Pts = periodPts.filter(p => p.year === year1);
-    const pts = year1Pts.length > 0 ? year1Pts : periodPts;
-    return pts.map(p => ({
-      pointIndex: p.pointIndex,
-      month: p.month,
-      shortMonth: p.shortMonth,
-      sortKey: p.sortKey
-    }));
-  });
-
-  /**
-   * To options = available period months from the ending year (year2) of the range.
-   * Filters out months earlier than selectedFromIdx.
-   */
-  readonly toMonthOptions = computed<MonthOption[]>(() => {
-    const periodPts = this.availablePeriodMonths();
-    const opt = this.activePeriodOption();
-    const fromIdx = this.selectedFromIdx();
-
-    let pts = periodPts;
-    if (opt && opt.years && opt.years.length >= 2) {
-      const year2 = opt.years[opt.years.length - 1];
-      const year2Pts = periodPts.filter(p => p.year === year2);
-      if (year2Pts.length > 0) {
-        pts = year2Pts;
-      }
+    if (choice === 'all') {
+      this.selectedFromIdx.set(pts[0].pointIndex);
+      this.selectedToIdx.set(pts[pts.length - 1].pointIndex);
+      this.activePreset.set('all');
+    } else if (choice === 'latest12') {
+      const startIdx = Math.max(0, pts.length - 12);
+      this.selectedFromIdx.set(pts[startIdx].pointIndex);
+      this.selectedToIdx.set(pts[pts.length - 1].pointIndex);
+      this.activePreset.set('latest12');
+    } else if (choice === 'latest24') {
+      const startIdx = Math.max(0, pts.length - 24);
+      this.selectedFromIdx.set(pts[startIdx].pointIndex);
+      this.selectedToIdx.set(pts[pts.length - 1].pointIndex);
+      this.activePreset.set('latest24');
+    } else if (choice === 'custom') {
+      this.selectedFromIdx.set(pts[0].pointIndex);
+      this.selectedToIdx.set(pts[pts.length - 1].pointIndex);
+      this.activePreset.set('custom');
+      this.isFromPickerOpen.set(true);
     }
 
-    return pts
-      .filter(p => fromIdx < 0 || p.pointIndex >= fromIdx)
-      .map(p => ({
-        pointIndex: p.pointIndex,
-        month: p.month,
-        shortMonth: p.shortMonth,
-        sortKey: p.sortKey
-      }));
+    this.isClarified.set(true);
+    this.isConfirmed.set(true);
+  }
+
+  reopenChart(): void {
+    this.isConfirmed.set(true);
+    this.isClarified.set(true);
+  }
+
+  // ─── Date Range & Calendar Data ────────────────────────────────────────────
+
+  readonly availableYears = computed<number[]>(() => {
+    const pts = this.trendData().points;
+    const yrs = Array.from(new Set(pts.map(p => p.year).filter((y): y is number => typeof y === 'number'))).sort((a, b) => a - b);
+    return yrs;
   });
 
-  // ─── Active points = period months filtered by From → To ─────────────────
+  readonly latestYear = computed<number | null>(() => {
+    const yrs = this.availableYears();
+    return yrs.length > 0 ? yrs[yrs.length - 1] : null;
+  });
+
+  readonly previousYear = computed<number | null>(() => {
+    const yrs = this.availableYears();
+    return yrs.length > 1 ? yrs[yrs.length - 2] : null;
+  });
+
+  getMonthsForYear(year: number): MonthOption[] {
+    const allPts = this.trendData().points;
+    const monthNames = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    const shortNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+    return monthNames.map((mName, mIdx) => {
+      const sortKey = year * 100 + (mIdx + 1);
+      const existing = allPts.find(p => p.year === year && p.monthIndex === mIdx);
+      return {
+        pointIndex: existing ? existing.pointIndex : -1,
+        month: `${mName} ${year}`,
+        shortMonth: `${shortNames[mIdx]} '${String(year).slice(2)}`,
+        sortKey,
+        year,
+        monthIndex: mIdx,
+        amount: existing ? existing.amount : 0,
+        isAvailable: !!existing
+      };
+    });
+  }
+
+  toggleFromPicker(event: MouseEvent): void {
+    event.stopPropagation();
+    this.isToPickerOpen.set(false);
+    this.isFromPickerOpen.update(v => !v);
+  }
+
+  toggleToPicker(event: MouseEvent): void {
+    event.stopPropagation();
+    this.isFromPickerOpen.set(false);
+    this.isToPickerOpen.update(v => !v);
+  }
+
+  closePopoversOnBackdrop(event: MouseEvent): void {
+    this.isFromPickerOpen.set(false);
+    this.isToPickerOpen.set(false);
+    this.isDownloadMenuOpen.set(false);
+  }
+
+  selectFromMonth(pointIndex: number): void {
+    if (pointIndex < 0) return;
+    this.selectedFromIdx.set(pointIndex);
+    this.activePreset.set('custom');
+    this.isFromPickerOpen.set(false);
+
+    // If To is earlier than From, push To forward
+    const all = this.trendData().points;
+    const fromPt = all.find(p => p.pointIndex === pointIndex);
+    const toPt = all.find(p => p.pointIndex === this.selectedToIdx());
+    if (fromPt && toPt && fromPt.sortKey > toPt.sortKey) {
+      this.selectedToIdx.set(pointIndex);
+    }
+  }
+
+  selectToMonth(pointIndex: number): void {
+    if (pointIndex < 0) return;
+    this.selectedToIdx.set(pointIndex);
+    this.activePreset.set('custom');
+    this.isToPickerOpen.set(false);
+
+    // If From is later than To, pull From back
+    const all = this.trendData().points;
+    const toPt = all.find(p => p.pointIndex === pointIndex);
+    const fromPt = all.find(p => p.pointIndex === this.selectedFromIdx());
+    if (fromPt && toPt && fromPt.sortKey > toPt.sortKey) {
+      this.selectedFromIdx.set(pointIndex);
+    }
+  }
+
+  // ─── Active Filtered Dataset (True inclusive date range filtering) ──────────
 
   readonly activePoints = computed<TrendDataPoint[]>(() => {
-    const periodPts = this.availablePeriodMonths();
-    if (!periodPts.length) return [];
+    const all = this.trendData().points;
+    if (!all || all.length === 0) return [];
 
     const fromIdx = this.selectedFromIdx();
-    const toIdx   = this.selectedToIdx();
+    const toIdx = this.selectedToIdx();
 
-    // If indices not yet set, show all period points
-    if (fromIdx < 0 || toIdx < 0) return periodPts;
+    if (fromIdx < 0 || toIdx < 0) return all;
 
-    // Filter by pointIndex range (inclusive both ends)
-    return periodPts.filter(p => p.pointIndex >= fromIdx && p.pointIndex <= toIdx);
+    const fromPt = all.find(p => p.pointIndex === fromIdx);
+    const toPt = all.find(p => p.pointIndex === toIdx);
+
+    if (!fromPt || !toPt) return all;
+
+    const minKey = Math.min(fromPt.sortKey, toPt.sortKey);
+    const maxKey = Math.max(fromPt.sortKey, toPt.sortKey);
+
+    const filtered = all.filter(p => p.sortKey >= minKey && p.sortKey <= maxKey);
+    return filtered.sort((a, b) => a.sortKey - b.sortKey);
+  });
+
+  readonly selectedFromPoint = computed<TrendDataPoint | null>(() => {
+    const all = this.trendData().points;
+    const idx = this.selectedFromIdx();
+    return all.find(p => p.pointIndex === idx) || all[0] || null;
+  });
+
+  readonly selectedToPoint = computed<TrendDataPoint | null>(() => {
+    const all = this.trendData().points;
+    const idx = this.selectedToIdx();
+    return all.find(p => p.pointIndex === idx) || all[all.length - 1] || null;
   });
 
   readonly isRangeCustomized = computed<boolean>(() => {
-    const pts = this.availablePeriodMonths();
-    if (pts.length <= 1) return false;
-    return this.selectedFromIdx() !== pts[0].pointIndex || this.selectedToIdx() !== pts[pts.length - 1].pointIndex;
+    const all = this.trendData().points;
+    if (all.length <= 1) return false;
+    return this.selectedFromIdx() !== all[0].pointIndex || this.selectedToIdx() !== all[all.length - 1].pointIndex;
+  });
+
+  readonly activeDateRangeLabel = computed<string>(() => {
+    const pts = this.activePoints();
+    if (!pts.length) return '';
+    return `${pts[0].shortMonth} – ${pts[pts.length - 1].shortMonth}`;
   });
 
   readonly activeMaxAmount = computed<number>(() => {
     const pts = this.activePoints();
     if (!pts.length) return 0;
+    const isStacked = this.selectedType() === 'stacked-bar';
+    const activeSeries = this.activeSeriesList();
+
+    if (isStacked && activeSeries.length > 1) {
+      return pts.reduce((maxSum, pt) => {
+        let periodSum = 0;
+        for (const s of activeSeries) {
+          const ev = pt.entityValues?.[s.name];
+          if (ev && !ev.isMissing) {
+            periodSum += ev.amount;
+          }
+        }
+        return Math.max(maxSum, periodSum);
+      }, 0);
+    }
+
+    if (this.isMultiSeries() && activeSeries.length > 0) {
+      return pts.reduce((maxVal, pt) => {
+        let ptMax = 0;
+        for (const s of activeSeries) {
+          const ev = pt.entityValues?.[s.name];
+          if (ev && !ev.isMissing) {
+            ptMax = Math.max(ptMax, ev.amount);
+          }
+        }
+        return Math.max(maxVal, ptMax);
+      }, 0);
+    }
+
     return pts.reduce((m, p) => Math.max(m, p.amount), 0);
+  });
+
+  readonly activeMaxCount = computed<number>(() => {
+    const pts = this.activePoints();
+    return pts.reduce((m, p) => Math.max(m, p.invoiceCountNum || 0), 0);
   });
 
   readonly activePeakPoint = computed<TrendDataPoint>(() => {
     const pts = this.activePoints();
     if (!pts.length) return this.trendData().peakPoint;
-    return pts.reduce((peak, p) => p.amount > peak.amount ? p : peak, pts[0]);
+    return pts.reduce((peak, p) => (p.amount > peak.amount ? p : peak), pts[0]);
   });
 
-  readonly activeTotalAmount = computed<number>(() =>
-    this.activePoints().reduce((s, p) => s + p.amount, 0)
-  );
+  readonly activeTotalAmount = computed<number>(() => {
+    return this.activePoints().reduce((s, p) => s + p.amount, 0);
+  });
 
-  /** SVG width scales with point count so labels never overlap */
-  readonly svgWidth = computed<number>(() =>
-    Math.max(680, this.activePoints().length * 54)
-  );
+  // ─── Preset Handlers ───
 
-  readonly gridRight = computed<number>(() => this.svgWidth() - 25);
+  setPreset(preset: 'all' | 'latest12' | 'latest24' | 'currentYear' | 'prevYear'): void {
+    const pts = this.trendData().points;
+    if (!pts.length) return;
+
+    this.activePreset.set(preset);
+    this.selectedMonth.set(null);
+    this.isFromPickerOpen.set(false);
+    this.isToPickerOpen.set(false);
+
+    if (preset === 'all') {
+      this.selectedFromIdx.set(pts[0].pointIndex);
+      this.selectedToIdx.set(pts[pts.length - 1].pointIndex);
+    } else if (preset === 'latest12') {
+      const startIdx = Math.max(0, pts.length - 12);
+      this.selectedFromIdx.set(pts[startIdx].pointIndex);
+      this.selectedToIdx.set(pts[pts.length - 1].pointIndex);
+    } else if (preset === 'latest24') {
+      const startIdx = Math.max(0, pts.length - 24);
+      this.selectedFromIdx.set(pts[startIdx].pointIndex);
+      this.selectedToIdx.set(pts[pts.length - 1].pointIndex);
+    } else if (preset === 'currentYear') {
+      const yr = this.latestYear();
+      if (yr) {
+        const yrPts = pts.filter(p => p.year === yr);
+        if (yrPts.length > 0) {
+          this.selectedFromIdx.set(yrPts[0].pointIndex);
+          this.selectedToIdx.set(yrPts[yrPts.length - 1].pointIndex);
+        }
+      }
+    } else if (preset === 'prevYear') {
+      const yr = this.previousYear();
+      if (yr) {
+        const yrPts = pts.filter(p => p.year === yr);
+        if (yrPts.length > 0) {
+          this.selectedFromIdx.set(yrPts[0].pointIndex);
+          this.selectedToIdx.set(yrPts[yrPts.length - 1].pointIndex);
+        }
+      }
+    }
+  }
+
+  // ─── Chart Catalog Selection ───
+
+  selectType(type: ChartType): void {
+    this.selectedType.set(type);
+  }
+
+  isMultiSeriesVisible(): boolean {
+    if (this.isMultiSeries()) return true;
+    const t = this.selectedType();
+    return t === 'multi-line' || t === 'grouped-bar' || t === 'stacked-bar' || t === 'pareto';
+  }
+
+  // ─── Dynamic Viewport Sizing (Zero data slicing) ───
+
+  readonly viewportSvgWidth = computed<number>(() => {
+    const t = this.selectedType();
+    if (t === 'donut') return 680;
+    if (t === 'histogram') return Math.max(680, this.histogramBins().length * 110);
+    const count = this.activePoints().length;
+    const minWidth = 680;
+    const slotW = count <= 8 ? 72 : (count <= 16 ? 54 : (count <= 28 ? 44 : 38));
+    const baseW = Math.max(minWidth, this.gridLeft + count * slotW + 50);
+    return Math.round(baseW * this.zoomLevel());
+  });
+
+  readonly gridRight = computed<number>(() => {
+    return this.selectedType() === 'pareto' ? this.viewportSvgWidth() - 45 : this.viewportSvgWidth() - 25;
+  });
+
+  // ─── Y-Axis Ticks (Numeric/currency ONLY) ───
 
   readonly yTicks = computed<Tick[]>(() => {
     const data = this.trendData();
@@ -865,45 +2038,80 @@ export class TrendChartComponent {
     const ceiling = this._calculateCeiling(maxVal);
     const steps = 4;
     const availH = this.baseY - this.plotTop;
+    const sym = this._getSanitizedCurrencySymbol(data.currencySymbol);
+
     return Array.from({ length: steps + 1 }, (_, i) => {
       const val = (ceiling / steps) * i;
-      return { value: val, label: this._formatTickValue(val, data.currencySymbol), y: Math.round(this.baseY - (val / ceiling) * availH) };
+      return {
+        value: val,
+        label: this._formatTickValue(val, sym),
+        y: Math.round(this.baseY - (val / ceiling) * availH)
+      };
     });
   });
 
+  // ─── Geometry Coordinates ───
+
+  readonly slotWidth = computed<number>(() => {
+    const count = this.activePoints().length;
+    if (count === 0) return 40;
+    const availW = this.gridRight() - this.gridLeft - 20;
+    return availW / count;
+  });
+
   readonly calculatedPoints = computed(() => {
-    const pts   = this.activePoints();
+    const pts = this.activePoints();
     const count = pts.length;
     if (count === 0) return [];
     const ceiling = this._calculateCeiling(this.activeMaxAmount());
-    const availW  = this.gridRight() - this.gridLeft - 20;
-    const availH  = this.baseY - this.plotTop;
-    const slotW   = availW / count;
-    const barW    = Math.min(Math.max(slotW * 0.48, 10), 42);
+    const countCeiling = this._calculateCeiling(this.activeMaxCount() || 100);
+    const availW = this.gridRight() - this.gridLeft - 20;
+    const availH = this.baseY - this.plotTop;
+    const slotW = availW / count;
+    const barW = Math.min(Math.max(slotW * 0.58, 6), 38);
 
     return pts.map((pt, i) => {
       const slotCenter = this.gridLeft + 10 + i * slotW + slotW / 2;
       const x = slotCenter - barW / 2;
       const h = ceiling > 0 ? (pt.amount / ceiling) * availH : 0;
-      return { point: pt, x: Math.round(x), y: Math.round(this.baseY - h), barWidth: Math.round(barW), slotCenter: Math.round(slotCenter) };
+      const countH = countCeiling > 0 ? ((pt.invoiceCountNum || 0) / countCeiling) * availH : 0;
+      const roundedH = Math.max(Math.round(h), 2);
+      const roundedY = Math.round(this.baseY - roundedH);
+      return {
+        point: pt,
+        x: Math.round(x),
+        y: roundedY,
+        height: roundedH,
+        countY: Math.round(this.baseY - countH),
+        barWidth: Math.round(barW),
+        slotCenter: Math.round(slotCenter)
+      };
     });
-  });
-
-  readonly selectedPoint = computed<TrendDataPoint | null>(() => {
-    const m = this.selectedMonth();
-    return m ? (this.activePoints().find(p => p.month === m) || null) : null;
   });
 
   readonly linePathD = computed(() => {
     const pts = this.calculatedPoints();
     if (!pts.length) return '';
-    if (pts.length === 1) return `M ${pts[0].x + pts[0].barWidth / 2} ${pts[0].y}`;
-    const coords = pts.map(p => ({ x: p.x + p.barWidth / 2, y: p.y }));
-    let d = `M ${coords[0].x} ${coords[0].y}`;
-    for (let i = 0; i < coords.length - 1; i++) {
-      const c = coords[i], n = coords[i + 1];
-      const cx = c.x + (n.x - c.x) / 2;
-      d += ` C ${cx} ${c.y}, ${cx} ${n.y}, ${n.x} ${n.y}`;
+    if (pts.length === 1) return `M ${pts[0].slotCenter} ${pts[0].y}`;
+    let d = `M ${pts[0].slotCenter} ${pts[0].y}`;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const c = pts[i], n = pts[i + 1];
+      const cx = c.slotCenter + (n.slotCenter - c.slotCenter) / 2;
+      d += ` C ${cx} ${c.y}, ${cx} ${n.y}, ${n.slotCenter} ${n.y}`;
+    }
+    return d;
+  });
+
+  readonly countLinePathD = computed(() => {
+    const pts = this.calculatedPoints();
+    if (!pts.length) return '';
+    const validPts = pts.filter(p => p.countY !== undefined);
+    if (!validPts.length) return '';
+    let d = `M ${validPts[0].slotCenter} ${validPts[0].countY}`;
+    for (let i = 0; i < validPts.length - 1; i++) {
+      const c = validPts[i], n = validPts[i + 1];
+      const cx = c.slotCenter + (n.slotCenter - c.slotCenter) / 2;
+      d += ` C ${cx} ${c.countY}, ${cx} ${n.countY}, ${n.slotCenter} ${n.countY}`;
     }
     return d;
   });
@@ -912,118 +2120,511 @@ export class TrendChartComponent {
     const pts = this.calculatedPoints();
     if (!pts.length) return '';
     const first = pts[0], last = pts[pts.length - 1];
-    return `${this.linePathD()} L ${last.x + last.barWidth / 2} ${this.baseY} L ${first.x + first.barWidth / 2} ${this.baseY} Z`;
+    return `${this.linePathD()} L ${last.slotCenter} ${this.baseY} L ${first.slotCenter} ${this.baseY} Z`;
   });
 
-  // ─── Event handlers ───────────────────────────────────────────────────────
+  // ─── Specialized Renderers Data ───
 
-  onPeriodChange(event: Event): void {
-    const val = (event.target as HTMLSelectElement).value;
-    this.selectedPeriodId.set(val);
-    this.selectedMonth.set(null);
-    this._syncFromToForPeriod(val, this.trendData());
-  }
+  readonly histogramBins = computed<HistogramBin[]>(() => {
+    return calculateHistogramBins(this.activePoints(), this._getSanitizedCurrencySymbol(this.trendData().currencySymbol), 6);
+  });
 
-  onFromMonthChange(event: Event): void {
-    const idx = parseInt((event.target as HTMLSelectElement).value, 10);
-    this.selectedFromIdx.set(idx);
-    this.selectedMonth.set(null);
-    // If To < From, advance To to match
-    if (this.selectedToIdx() < idx) this.selectedToIdx.set(idx);
-  }
+  readonly waterfallSteps = computed<WaterfallStep[]>(() => {
+    return calculateWaterfallData(this.activePoints(), this._getSanitizedCurrencySymbol(this.trendData().currencySymbol));
+  });
 
-  onToMonthChange(event: Event): void {
-    const idx = parseInt((event.target as HTMLSelectElement).value, 10);
-    this.selectedToIdx.set(idx);
-    this.selectedMonth.set(null);
-    // If From > To, pull From back
-    if (this.selectedFromIdx() > idx) this.selectedFromIdx.set(idx);
-  }
+  readonly paretoItems = computed<ParetoItem[]>(() => {
+    return calculateParetoData(this.activePoints());
+  });
 
-  resetToFullPeriod(): void {
-    this._syncFromToForPeriod(this.selectedPeriodId(), this.trendData());
-    this.selectedMonth.set(null);
-  }
+  readonly donutSlices = computed<DonutSlice[]>(() => {
+    if (this.isMultiSeries() && this.activeSeriesList().length >= 2) {
+      const active = this.activeSeriesList();
+      const entityTotals = active.map(s => ({
+        series: s,
+        total: this.getSeriesTotal(s)
+      }));
+      const grandTotal = entityTotals.reduce((acc, curr) => acc + curr.total, 0);
+      if (grandTotal <= 0) return [];
 
-  /**
-   * Set From/To to the full range of the selected period using the COMPLETE trendData.points.
-   * This is the single authoritative method for resetting from/to state.
-   */
-  private _syncFromToForPeriod(periodId: string, data: TrendSeries): void {
-    if (!data?.points?.length) return;
+      let currentAngle = 0;
+      const cx = 140, cy = 135, r = 100, innerR = 58;
+      return entityTotals.map((item) => {
+        const pct = (item.total / grandTotal) * 100;
+        const angle = (item.total / grandTotal) * 360;
+        const startAngle = currentAngle;
+        const endAngle = currentAngle + angle;
+        currentAngle = endAngle;
 
-    const opt = (data.periodOptions || []).find(o => o.id === periodId);
-    let pts: TrendDataPoint[];
+        const rad1 = ((startAngle - 90) * Math.PI) / 180;
+        const rad2 = ((endAngle - 90) * Math.PI) / 180;
 
-    if (!opt || opt.id === 'all') {
-      pts = data.points;
-    } else {
-      pts = data.points.slice(opt.minPointIndex, opt.maxPointIndex + 1);
+        const x1 = cx + r * Math.cos(rad1);
+        const y1 = cy + r * Math.sin(rad1);
+        const x2 = cx + r * Math.cos(rad2);
+        const y2 = cy + r * Math.sin(rad2);
+
+        const ix1 = cx + innerR * Math.cos(rad2);
+        const iy1 = cy + innerR * Math.sin(rad2);
+        const ix2 = cx + innerR * Math.cos(rad1);
+        const iy2 = cy + innerR * Math.sin(rad1);
+
+        const largeArc = angle > 180 ? 1 : 0;
+        const pathD = `M ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} L ${ix1} ${iy1} A ${innerR} ${innerR} 0 ${largeArc} 0 ${ix2} ${iy2} Z`;
+
+        return {
+          label: item.series.name,
+          shortLabel: item.series.name.length > 12 ? item.series.name.slice(0, 10) + '…' : item.series.name,
+          amount: item.total,
+          percentage: Math.round(pct),
+          color: item.series.color,
+          startAngle,
+          endAngle,
+          pathD
+        };
+      });
     }
+    return calculateDonutSlices(this.activePoints());
+  });
 
-    if (pts.length > 0) {
-      if (opt && opt.years && opt.years.length >= 2) {
-        const year1 = opt.years[0];
-        const year2 = opt.years[opt.years.length - 1];
-        const year1Pts = pts.filter(p => p.year === year1);
-        const year2Pts = pts.filter(p => p.year === year2);
+  readonly scatterPoints = computed(() => {
+    const pts = this.activePoints();
+    const maxAmount = this._calculateCeiling(this.activeMaxAmount());
+    const maxCount = this._calculateCeiling(this.activeMaxCount() || 100);
+    const availW = this.gridRight() - this.gridLeft - 30;
+    const availH = this.baseY - this.plotTop;
 
-        const firstPt = year1Pts.length > 0 ? year1Pts[0] : pts[0];
-        const lastPt  = year2Pts.length > 0 ? year2Pts[year2Pts.length - 1] : pts[pts.length - 1];
+    return pts.map(pt => {
+      const countVal = pt.invoiceCountNum || pt.pointIndex * 10;
+      const x = this.gridLeft + 15 + (countVal / maxCount) * availW;
+      const y = this.baseY - (pt.amount / maxAmount) * availH;
+      return {
+        point: pt,
+        x: Math.round(x),
+        y: Math.round(y),
+        r: Math.round(Math.min(Math.max(pt.amount / (maxAmount * 0.1), 4), 14))
+      };
+    });
+  });
 
-        this.selectedFromIdx.set(firstPt.pointIndex);
-        this.selectedToIdx.set(lastPt.pointIndex);
-      } else {
-        this.selectedFromIdx.set(pts[0].pointIndex);
-        this.selectedToIdx.set(pts[pts.length - 1].pointIndex);
-      }
-    }
+  getHistBinX(index: number): number {
+    const availW = this.gridRight() - this.gridLeft - 20;
+    const binW = this.getHistBinWidth();
+    const count = this.histogramBins().length;
+    const gap = (availW - count * binW) / (count + 1);
+    return Math.round(this.gridLeft + 10 + gap + index * (binW + gap));
   }
 
-  selectType(type: ChartType): void { this.selectedType.set(type); }
+  getHistBinY(count: number): number {
+    const maxCount = Math.max(...this.histogramBins().map(b => b.count), 1);
+    const availH = this.baseY - this.plotTop - 20;
+    return Math.round(this.baseY - (count / maxCount) * availH);
+  }
+
+  getHistBinWidth(): number {
+    return 65;
+  }
+
+  getWaterfallX(index: number): number {
+    const count = this.waterfallSteps().length;
+    const availW = this.gridRight() - this.gridLeft - 20;
+    const slotW = availW / count;
+    const barW = this.getWaterfallWidth();
+    return Math.round(this.gridLeft + 10 + index * slotW + (slotW - barW) / 2);
+  }
+
+  getWaterfallY(step: WaterfallStep): number {
+    const maxAmount = this._calculateCeiling(this.activeMaxAmount());
+    const availH = this.baseY - this.plotTop;
+    const upperVal = Math.max(step.startValue, step.endValue);
+    return Math.round(this.baseY - (upperVal / maxAmount) * availH);
+  }
+
+  getWaterfallHeight(step: WaterfallStep): number {
+    const maxAmount = this._calculateCeiling(this.activeMaxAmount());
+    const availH = this.baseY - this.plotTop;
+    const diff = Math.abs(step.endValue - step.startValue);
+    return Math.max(Math.round((diff / maxAmount) * availH), 3);
+  }
+
+  getWaterfallWidth(): number {
+    const count = this.waterfallSteps().length;
+    const availW = this.gridRight() - this.gridLeft - 20;
+    return Math.round(Math.min(Math.max((availW / count) * 0.6, 12), 42));
+  }
+
+  getParetoX(index: number): number {
+    const count = this.paretoItems().length;
+    const availW = this.gridRight() - this.gridLeft - 20;
+    const slotW = availW / count;
+    const barW = this.getParetoWidth();
+    return Math.round(this.gridLeft + 10 + index * slotW + (slotW - barW) / 2);
+  }
+
+  getParetoY(amount: number): number {
+    const maxAmount = this._calculateCeiling(this.activeMaxAmount());
+    const availH = this.baseY - this.plotTop;
+    return Math.round(this.baseY - (amount / maxAmount) * availH);
+  }
+
+  getParetoPctY(pct: number): number {
+    const availH = this.baseY - this.plotTop;
+    return Math.round(this.baseY - (pct / 100) * availH);
+  }
+
+  getParetoWidth(): number {
+    const count = this.paretoItems().length;
+    const availW = this.gridRight() - this.gridLeft - 20;
+    return Math.round(Math.min(Math.max((availW / count) * 0.55, 10), 38));
+  }
+
+  paretoCurveD(): string {
+    const items = this.paretoItems();
+    if (!items.length) return '';
+    const points = items.map((it, i) => ({
+      x: this.getParetoX(i) + this.getParetoWidth() / 2,
+      y: this.getParetoPctY(it.cumulativePercent)
+    }));
+    let d = `M ${points[0].x} ${points[0].y}`;
+    for (let i = 0; i < points.length - 1; i++) {
+      const c = points[i], n = points[i + 1];
+      const cx = c.x + (n.x - c.x) / 2;
+      d += ` C ${cx} ${c.y}, ${cx} ${n.y}, ${n.x} ${n.y}`;
+    }
+    return d;
+  }
+
+  getParetoHover(item: ParetoItem, index: number): { point: TrendDataPoint; x: number; y: number } {
+    return {
+      point: item.point,
+      x: this.getParetoX(index) + this.getParetoWidth() / 2,
+      y: this.getParetoY(item.amount)
+    };
+  }
+
+  shouldRenderXLabel(index: number, total: number): boolean {
+    if (total <= 14) return true;
+    if (total <= 24) return index % 2 === 0 || index === total - 1;
+    if (total <= 36) return index % 3 === 0 || index === total - 1;
+    return index % 4 === 0 || index === total - 1;
+  }
+
+  readonly selectedPoint = computed<TrendDataPoint | null>(() => {
+    const m = this.selectedMonth();
+    return m ? (this.activePoints().find(p => p.month === m) || null) : null;
+  });
 
   toggleMonthSelection(point: TrendDataPoint): void {
     this.selectedMonth.set(this.selectedMonth() === point.month ? null : point.month);
   }
 
-  clearMonthSelection(): void { this.selectedMonth.set(null); }
-  zoomIn(): void  { this.zoomLevel.set(parseFloat(Math.min(this.zoomLevel() + 0.20, 2.5).toFixed(2))); }
-  zoomOut(): void { this.zoomLevel.set(parseFloat(Math.max(this.zoomLevel() - 0.20, 0.8).toFixed(2))); }
-  resetZoom(): void { this.zoomLevel.set(1.0); }
+  clearMonthSelection(): void {
+    this.selectedMonth.set(null);
+  }
+
+  toggleSeriesVisibility(seriesId: string): void {
+    this.hiddenSeriesIds.update(set => {
+      const next = new Set(set);
+      if (next.has(seriesId)) {
+        next.delete(seriesId);
+      } else {
+        const all = this.trendData().seriesList || [];
+        if (next.size < all.length - 1) {
+          next.add(seriesId);
+        }
+      }
+      return next;
+    });
+  }
+
+  getSeriesTotal(series: DataSeries): number {
+    const pts = this.activePoints();
+    return pts.reduce((sum, p) => {
+      const ent = p.entityValues?.[series.name];
+      if (ent && !ent.isMissing) return sum + ent.amount;
+      return sum;
+    }, 0);
+  }
+
+  multiLinePathD(series: DataSeries): string {
+    const pts = this.calculatedPoints();
+    if (!pts.length) return '';
+    const validPts = pts.filter(p => {
+      const ev = p.point.entityValues?.[series.name];
+      return ev && !ev.isMissing;
+    });
+    if (!validPts.length) return '';
+    const ceiling = this._calculateCeiling(this.activeMaxAmount());
+    const availH = this.baseY - this.plotTop;
+
+    const coords = validPts.map(p => {
+      const ev = p.point.entityValues![series.name];
+      const h = ceiling > 0 ? (ev.amount / ceiling) * availH : 0;
+      return {
+        x: p.slotCenter,
+        y: Math.round(this.baseY - Math.max(h, 2))
+      };
+    });
+
+    if (coords.length === 1) return `M ${coords[0].x} ${coords[0].y}`;
+    let d = `M ${coords[0].x} ${coords[0].y}`;
+    for (let i = 0; i < coords.length - 1; i++) {
+      const c = coords[i], n = coords[i + 1];
+      const cx = c.x + (n.x - c.x) / 2;
+      d += ` C ${cx} ${c.y}, ${cx} ${n.y}, ${n.x} ${n.y}`;
+    }
+    return d;
+  }
+
+  multiAreaPathD(series: DataSeries): string {
+    const pts = this.calculatedPoints();
+    if (!pts.length) return '';
+    const validPts = pts.filter(p => {
+      const ev = p.point.entityValues?.[series.name];
+      return ev && !ev.isMissing;
+    });
+    if (validPts.length < 2) return '';
+    const ceiling = this._calculateCeiling(this.activeMaxAmount());
+    const availH = this.baseY - this.plotTop;
+    const coords = validPts.map(p => {
+      const ev = p.point.entityValues![series.name];
+      const h = ceiling > 0 ? (ev.amount / ceiling) * availH : 0;
+      return {
+        x: p.slotCenter,
+        y: Math.round(this.baseY - Math.max(h, 2))
+      };
+    });
+    let lineD = `M ${coords[0].x} ${coords[0].y}`;
+    for (let i = 0; i < coords.length - 1; i++) {
+      const c = coords[i], n = coords[i + 1];
+      const cx = c.x + (n.x - c.x) / 2;
+      lineD += ` C ${cx} ${c.y}, ${cx} ${n.y}, ${n.x} ${n.y}`;
+    }
+    const first = coords[0], last = coords[coords.length - 1];
+    return `${lineD} L ${last.x} ${this.baseY} L ${first.x} ${this.baseY} Z`;
+  }
+
+  getEntityPointY(item: any, series: DataSeries): number | null {
+    const ev = item.point.entityValues?.[series.name];
+    if (!ev || ev.isMissing) return null;
+    const ceiling = this._calculateCeiling(this.activeMaxAmount());
+    const availH = this.baseY - this.plotTop;
+    const h = ceiling > 0 ? (ev.amount / ceiling) * availH : 0;
+    return Math.round(this.baseY - Math.max(h, 2));
+  }
+
+  getEntityBar(item: any, series: DataSeries, sIdx: number, activeCount: number): { x: number; y: number; width: number; height: number } | null {
+    const ev = item.point.entityValues?.[series.name];
+    if (!ev || ev.isMissing) return null;
+    const ceiling = this._calculateCeiling(this.activeMaxAmount());
+    const availH = this.baseY - this.plotTop;
+    const h = ceiling > 0 ? (ev.amount / ceiling) * availH : 0;
+    const roundedH = Math.max(Math.round(h), 2);
+    const roundedY = Math.round(this.baseY - roundedH);
+
+    const clusterW = Math.min(this.slotWidth() * 0.78, 64);
+    const barW = Math.max(Math.floor(clusterW / (activeCount || 1)) - 1.5, 3);
+    const startX = item.slotCenter - ((activeCount || 1) * barW) / 2;
+    const barX = startX + sIdx * barW;
+
+    return {
+      x: Math.round(barX),
+      y: roundedY,
+      width: Math.round(barW - 1),
+      height: roundedH
+    };
+  }
+
+  getStackedSegments(item: any, activeList: DataSeries[]): Array<{ seriesId: string; y: number; height: number; color: string }> {
+    const ceiling = this._calculateCeiling(this.activeMaxAmount());
+    const availH = this.baseY - this.plotTop;
+    const segments: Array<{ seriesId: string; y: number; height: number; color: string }> = [];
+    let currentY = this.baseY;
+
+    for (const series of activeList) {
+      const ev = item.point.entityValues?.[series.name];
+      if (!ev || ev.isMissing || ev.amount <= 0) continue;
+      const h = ceiling > 0 ? (ev.amount / ceiling) * availH : 0;
+      const roundedH = Math.max(Math.round(h), 2);
+      const segY = currentY - roundedH;
+      segments.push({
+        seriesId: series.id,
+        y: segY,
+        height: roundedH,
+        color: series.color
+      });
+      currentY = segY;
+    }
+    return segments;
+  }
+
+  isPointMissing(point: TrendDataPoint, series: DataSeries): boolean {
+    const ev = point.entityValues?.[series.name];
+    return !ev || Boolean(ev.isMissing);
+  }
+
+  getPointEntityValue(point: TrendDataPoint, series: DataSeries): string {
+    const ev = point.entityValues?.[series.name];
+    if (!ev || ev.isMissing) return 'No record';
+    const sym = this._getSanitizedCurrencySymbol(this.trendData().currencySymbol);
+    return ev.rawAmount.startsWith(sym) ? ev.rawAmount : `${sym}${ev.rawAmount}`;
+  }
+
+  getAlphaColor(hex: string, alpha: number): string {
+    if (!hex || !hex.startsWith('#')) return `rgba(37, 99, 235, ${alpha})`;
+    let c = hex.slice(1);
+    if (c.length === 3) c = c.split('').map(x => x + x).join('');
+    const num = parseInt(c, 16);
+    const r = (num >> 16) & 255;
+    const g = (num >> 8) & 255;
+    const b = num & 255;
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+
+  // ─── Zoom Controls ───
+
+  zoomIn(): void {
+    this.zoomLevel.set(parseFloat(Math.min(this.zoomLevel() + 0.20, 2.5).toFixed(2)));
+  }
+
+  zoomOut(): void {
+    this.zoomLevel.set(parseFloat(Math.max(this.zoomLevel() - 0.20, 0.8).toFixed(2)));
+  }
+
+  resetZoom(): void {
+    this.zoomLevel.set(1.0);
+  }
 
   onWheel(event: WheelEvent): void {
-    // Allow horizontal trackpad/shift-scroll for panning
     if (Math.abs(event.deltaX) > Math.abs(event.deltaY) || event.shiftKey) return;
     event.preventDefault();
     const delta = event.deltaY < 0 ? 0.12 : -0.12;
     this.zoomLevel.set(parseFloat(Math.min(Math.max(this.zoomLevel() + delta, 0.8), 2.5).toFixed(2)));
   }
 
-  onElementHover(item: { point: TrendDataPoint; x: number; y: number; barWidth: number }, event: MouseEvent): void {
+  // ─── Hover / Tooltip ───
+
+  onElementHover(item: { point: TrendDataPoint; x: number; y: number }, event: MouseEvent): void {
     const vEl = this.viewport()?.nativeElement;
     if (!vEl) return;
     const rect = vEl.getBoundingClientRect();
     this.hoveredPoint.set(item);
-    this.tooltipX.set(Math.max(85, Math.min(event.clientX - rect.left, rect.width - 85)));
-    this.tooltipY.set(Math.max(10, event.clientY - rect.top - 12));
+    const posX = event.clientX - rect.left + vEl.scrollLeft;
+    const posY = event.clientY - rect.top;
+    const maxW = this.viewportSvgWidth();
+    this.tooltipX.set(Math.max(85, Math.min(posX, maxW - 85)));
+    this.tooltipY.set(Math.max(10, posY - 12));
   }
 
-  onElementLeave(): void { this.hoveredPoint.set(null); }
-
-  getTopCapPoints(item: { x: number; y: number; barWidth: number }): string {
-    return `${item.x},${item.y} ${item.x + this.depthDx},${item.y + this.depthDy} ${item.x + item.barWidth + this.depthDx},${item.y + this.depthDy} ${item.x + item.barWidth},${item.y}`;
+  onElementLeave(): void {
+    this.hoveredPoint.set(null);
   }
 
-  getSideFacetPoints(item: { x: number; y: number; barWidth: number }): string {
-    return `${item.x + item.barWidth},${item.y} ${item.x + item.barWidth + this.depthDx},${item.y + this.depthDy} ${item.x + item.barWidth + this.depthDx},${this.baseY + this.depthDy} ${item.x + item.barWidth},${this.baseY}`;
+  // ─── Download / Export Chart ───
+
+  toggleDownloadMenu(event: MouseEvent): void {
+    event.stopPropagation();
+    this.isDownloadMenuOpen.update(v => !v);
   }
+
+  exportChart(format: 'png' | 'svg'): void {
+    const svgEl = this.chartSvg()?.nativeElement;
+    if (!svgEl) return;
+
+    this.isDownloadMenuOpen.set(false);
+
+    try {
+      const width = this.viewportSvgWidth();
+      const height = 290;
+
+      const clonedSvg = svgEl.cloneNode(true) as SVGSVGElement;
+      clonedSvg.setAttribute('width', String(width));
+      clonedSvg.setAttribute('height', String(height));
+      clonedSvg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+
+      const bgRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      bgRect.setAttribute('width', '100%');
+      bgRect.setAttribute('height', '100%');
+      bgRect.setAttribute('fill', '#ffffff');
+      clonedSvg.insertBefore(bgRect, clonedSvg.firstChild);
+
+      const styleEl = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+      styleEl.textContent = `
+        text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        .grid-line { stroke: #e2e8f0; stroke-width: 1; stroke-dasharray: 4 4; }
+        .baseline { stroke: #cbd5e1; stroke-width: 1.5; }
+        .axis-label { font-size: 10px; fill: #64748b; font-family: monospace; }
+        .x-axis-label { font-size: 10px; fill: #475569; font-weight: 600; }
+        .clean-trend-line.primary { stroke: #2563eb; stroke-width: 3; fill: none; }
+        .clean-trend-line.secondary { stroke: #d97706; stroke-width: 2.2; fill: none; }
+        .area-top-line { stroke: #1d4ed8; stroke-width: 2.5; fill: none; }
+        .point-outer { fill: #ffffff; stroke: #2563eb; stroke-width: 2.2; }
+        .point-inner { fill: #2563eb; }
+      `;
+      clonedSvg.insertBefore(styleEl, bgRect.nextSibling);
+
+      const pts = this.activePoints();
+      const fromShort = pts.length > 0 ? pts[0].shortMonth.replace(/[^a-zA-Z0-9]/g, '') : 'start';
+      const toShort = pts.length > 0 ? pts[pts.length - 1].shortMonth.replace(/[^a-zA-Z0-9]/g, '') : 'end';
+      const filename = `cfo_chart_${this.selectedType()}_${fromShort}_to_${toShort}`;
+
+      const serializer = new XMLSerializer();
+      const svgString = serializer.serializeToString(clonedSvg);
+
+      if (format === 'svg') {
+        const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+        this._triggerDownload(URL.createObjectURL(blob), `${filename}.svg`);
+      } else {
+        const img = new Image();
+        const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+        const url = URL.createObjectURL(svgBlob);
+
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const scale = 2;
+          canvas.width = width * scale;
+          canvas.height = height * scale;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.scale(scale, scale);
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, width, height);
+            ctx.drawImage(img, 0, 0, width, height);
+            canvas.toBlob(pngBlob => {
+              if (pngBlob) {
+                this._triggerDownload(URL.createObjectURL(pngBlob), `${filename}.png`);
+              }
+              URL.revokeObjectURL(url);
+            }, 'image/png');
+          } else {
+            URL.revokeObjectURL(url);
+          }
+        };
+        img.src = url;
+      }
+    } catch (err) {
+      console.error('Chart export error:', err);
+    }
+  }
+
+  private _triggerDownload(url: string, filename: string): void {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  // ─── Metric & Currency Formatting ───
 
   formatCompactCurrency(val: number): string {
-    const sym = this.trendData().currencySymbol || '$';
+    const sym = this._getSanitizedCurrencySymbol(this.trendData().currencySymbol);
     if (val >= 1e9) return `${sym}${(val / 1e9).toFixed(1)}B`;
     if (val >= 1e6) return `${sym}${(val / 1e6).toFixed(1)}M`;
     if (val >= 1e3) return `${sym}${(val / 1e3).toFixed(1)}K`;
-    return `${sym}${val.toFixed(0)}`;
+    return `${sym}${Math.round(val)}`;
   }
 
   formatPercentOfMax(val: number): string {
@@ -1036,6 +2637,21 @@ export class TrendChartComponent {
     return tot > 0 ? `${((val / tot) * 100).toFixed(1)}%` : '0%';
   }
 
+  private _getSanitizedCurrencySymbol(sym?: string): string {
+    if (!sym) return '$';
+    const trimmed = sym.trim();
+    if (trimmed === '$' || trimmed === '€' || trimmed === '₹' || trimmed === '£' || trimmed === '¥') {
+      return trimmed;
+    }
+    if (/^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i.test(trimmed)) {
+      return '$';
+    }
+    if (/^[A-Za-z]{3}$/.test(trimmed)) {
+      return trimmed + ' ';
+    }
+    return '$';
+  }
+
   private _calculateCeiling(maxVal: number): number {
     if (maxVal <= 0) return 100;
     const mag = Math.pow(10, Math.floor(Math.log10(maxVal)));
@@ -1045,10 +2661,17 @@ export class TrendChartComponent {
   }
 
   private _formatTickValue(val: number, sym: string): string {
-    if (val === 0) return `${sym}0`;
-    if (val >= 1e9) return `${sym}${(val / 1e9).toFixed(1)}B`;
-    if (val >= 1e6) { const v = val / 1e6; return `${sym}${v % 1 === 0 ? v.toFixed(0) : v.toFixed(1)}M`; }
-    if (val >= 1e3) return `${sym}${(val / 1e3).toFixed(0)}K`;
-    return `${sym}${val.toFixed(0)}`;
+    const s = this._getSanitizedCurrencySymbol(sym);
+    if (val === 0) return `${s}0`;
+    if (val >= 1e9) return `${s}${(val / 1e9).toFixed(1)}B`;
+    if (val >= 1e6) {
+      const v = val / 1e6;
+      return `${s}${v % 1 === 0 ? v.toFixed(0) : v.toFixed(1)}M`;
+    }
+    if (val >= 1e3) {
+      const v = val / 1e3;
+      return `${s}${v % 1 === 0 ? v.toFixed(0) : v.toFixed(1)}K`;
+    }
+    return `${s}${Math.round(val)}`;
   }
 }

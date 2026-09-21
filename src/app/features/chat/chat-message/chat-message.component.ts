@@ -57,7 +57,7 @@ import { parseTrendData, TrendSeries } from '../../../core/utils/trend-parser.ut
               <div class="assistant-markdown-content" [innerHTML]="markdownFormatter.formatMarkdown(message().content)"></div>
 
               @if (trendData(); as trend) {
-                <app-trend-chart [trendData]="trend" />
+                <app-trend-chart [trendData]="trend" [userQuery]="userQuery()" />
               }
 
               @if (message().agent) {
@@ -315,13 +315,14 @@ import { parseTrendData, TrendSeries } from '../../../core/utils/trend-parser.ut
 })
 export class ChatMessageComponent {
   readonly message = input.required<ChatMessage>();
+  readonly userQuery = input<string>('');
   readonly markdownFormatter = inject(MarkdownFormatterService);
   readonly isCopied = signal(false);
 
   readonly trendData = computed<TrendSeries | null>(() => {
     const msg = this.message();
     if (msg.role !== 'assistant' || !msg.content || msg.isTyping) return null;
-    return parseTrendData(msg.content);
+    return parseTrendData(msg.content, this.userQuery());
   });
 
   copyResponseText(text: string): void {

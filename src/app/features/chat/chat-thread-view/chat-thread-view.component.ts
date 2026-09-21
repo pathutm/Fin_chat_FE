@@ -119,7 +119,7 @@ import { parseTrendData, TrendSeries } from '../../../core/utils/trend-parser.ut
 
                     <!-- Graphical Trend Visualization -->
                     @if (getTrendSeries(msg.content); as trend) {
-                      <app-trend-chart [trendData]="trend" />
+                      <app-trend-chart [trendData]="trend" [userQuery]="getUserQueryForMessage(msg.id)" />
                     }
 
                     @if (msg.agent) {
@@ -709,6 +709,18 @@ export class ChatThreadViewComponent implements OnDestroy {
   getTrendSeries(content?: string): TrendSeries | null {
     if (!content) return null;
     return parseTrendData(content);
+  }
+
+  getUserQueryForMessage(msgId: string): string {
+    const msgs = this.chatService.messages();
+    const idx = msgs.findIndex((m) => m.id === msgId);
+    if (idx <= 0) return '';
+    for (let i = idx - 1; i >= 0; i--) {
+      if (msgs[i].role === 'user' && !msgs[i].deleted) {
+        return msgs[i].content || '';
+      }
+    }
+    return '';
   }
 
   copyResponseText(text: string, msgId: string): void {
