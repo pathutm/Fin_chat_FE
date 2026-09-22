@@ -15,11 +15,10 @@ import {
   HistogramBin,
   calculateWaterfallData,
   WaterfallStep,
-  calculateParetoData,
-  ParetoItem,
   calculateDonutSlices,
   DonutSlice,
-  extractCurrencySymbol
+  extractCurrencySymbol,
+  inferDimensionFromLabels
 } from '../../../core/utils/trend-parser.util';
 
 interface Tick {
@@ -39,13 +38,47 @@ interface MonthOption {
   isAvailable: boolean;
 }
 
+export interface PaletteShade {
+  base: string;
+  light: string;
+  lighter: string;
+  dark: string;
+  darker: string;
+}
+
+export const PALETTE_SHADES: PaletteShade[] = [
+  { base: '#2563eb', light: '#60a5fa', lighter: '#93c5fd', dark: '#1e40af', darker: '#0f172a' },
+  { base: '#0d9488', light: '#2dd4bf', lighter: '#99f6e4', dark: '#0f766e', darker: '#134e4a' },
+  { base: '#d97706', light: '#fbbf24', lighter: '#fde68a', dark: '#b45309', darker: '#78350f' },
+  { base: '#7c3aed', light: '#a78bfa', lighter: '#ddd6fe', dark: '#6d28d9', darker: '#4c1d95' },
+  { base: '#e11d48', light: '#fb7185', lighter: '#fecdd3', dark: '#be123c', darker: '#881337' },
+  { base: '#0284c7', light: '#38bdf8', lighter: '#bae6fd', dark: '#0369a1', darker: '#0c4a6e' },
+  { base: '#16a34a', light: '#4ade80', lighter: '#bbf7d0', dark: '#15803d', darker: '#14532d' },
+  { base: '#ea580c', light: '#fb923c', lighter: '#fed7aa', dark: '#c2410c', darker: '#7c2d12' },
+  { base: '#4f46e5', light: '#818cf8', lighter: '#c7d2fe', dark: '#4338ca', darker: '#312e81' },
+  { base: '#64748b', light: '#94a3b8', lighter: '#cbd5e1', dark: '#475569', darker: '#1e293b' },
+];
+
+export interface ComparisonTableRow {
+  entityName: string;
+  color: string;
+  amount: number;
+  rawAmount: string;
+  sharePct: number;
+  diffFromLeader: number;
+  diffFormatted: string;
+  diffPercentFormatted: string;
+  isLeader: boolean;
+  evaluation: string;
+}
+
 @Component({
   selector: 'app-trend-chart',
   standalone: true,
   imports: [CommonModule],
   template: `
     <!-- ── 1. INITIAL RANGE CLARIFICATION CARD (When broad question has no range) ── -->
-    @if (!isClarified() && queryAnalysis().isAmbiguous) {
+    @if (!isClarified() && queryAnalysis().isAmbiguous && trendData().categoryType !== 'category' && (trendData().points[0]?.sortKey ?? 0) > 0) {
       <div class="trend-clarification-card">
         <div class="clarification-header">
           <div class="clarification-icon">
@@ -59,7 +92,7 @@ interface MonthOption {
             <span class="clarification-desc">
               Data available from <strong>{{ trendData().points[0].month }}</strong> to
               <strong>{{ trendData().points[trendData().points.length - 1].month }}</strong>
-              ({{ trendData().points.length }} monthly records). Which time range would you like to analyze?
+              ({{ trendData().points.length }} records). Which time range would you like to analyze?
             </span>
           </div>
         </div>
@@ -242,14 +275,66 @@ interface MonthOption {
                     <path d="M3 20h18M3 20l4-9 6 4 8-10v15H3z"/>
                   </svg>
                 }
+                @if (c.type === 'waterfall') {
+                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="2" y="4" width="4" height="6" rx="1"/>
+                    <rect x="8" y="8" width="4" height="5" rx="1"/>
+                    <rect x="14" y="11" width="4" height="6" rx="1"/>
+                    <rect x="20" y="7" width="4" height="13" rx="1"/>
+                  </svg>
+                }
+                @if (c.type === 'donut') {
+                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="9"/>
+                    <circle cx="12" cy="12" r="4"/>
+                  </svg>
+                }
+                @if (c.type === 'histogram') {
+                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="14" width="4" height="7"/>
+                    <rect x="10" y="6" width="4" height="15"/>
+                    <rect x="17" y="10" width="4" height="11"/>
+                  </svg>
+                }
                 <span>{{ c.label }}</span>
               </button>
             }
           </div>
         </div>
 
-        <!-- ── 5. PERMANENT DATE RANGE FILTERING BAR (Always Visible & Interactive) ── -->
-        <div class="filters-bar">
+        <!-- ── 5. SCENARIO-ADAPTIVE FILTERING BAR (Entity Filter or Date Range) ── -->
+        @if (isComparisonScenario()) {
+          <div class="entity-filter-bar">
+            <div class="entity-filter-header">
+              <span class="entity-filter-label">Filter {{ dimensionLabel() }}:</span>
+              <span class="entity-filter-hint">Click a pill to isolate, or select multiple to compare</span>
+            </div>
+            <div class="entity-filter-pills-wrap">
+              <button
+                type="button"
+                class="entity-pill-btn all-pill"
+                [class.active]="selectedEntityIds().length === 0 || selectedEntityIds().length === allEntities().length"
+                (click)="selectAllEntities()"
+              >
+                <span>All / Both ({{ allEntities().length }})</span>
+              </button>
+              @for (ent of allEntities(); track ent.id) {
+                <button
+                  type="button"
+                  class="entity-pill-btn"
+                  [class.active]="isEntitySelected(ent.id)"
+                  (click)="toggleEntityFilter(ent.id)"
+                  [title]="'Filter to ' + ent.label"
+                >
+                  <span class="entity-color-dot" [style.background-color]="ent.color"></span>
+                  <span class="entity-pill-label">{{ ent.label }}</span>
+                </button>
+              }
+            </div>
+          </div>
+        } @else {
+          <!-- ── 5. PERMANENT DATE RANGE FILTERING BAR (For Chronological Time Series) ── -->
+          <div class="filters-bar">
           <!-- Quick Presets -->
           <div class="filter-item presets-group">
             <span class="filter-label">Quick:</span>
@@ -423,7 +508,8 @@ interface MonthOption {
               <span>Reset Range</span>
             </button>
           }
-        </div>
+          </div>
+        }
 
         <!-- Multi-Series Interactive Legend -->
         @if (isMultiSeriesVisible()) {
@@ -445,22 +531,16 @@ interface MonthOption {
             } @else {
               <div class="legend-item" (mouseenter)="hoveredSeries.set('amount')" (mouseleave)="hoveredSeries.set(null)">
                 <span class="legend-color-dot" style="background: #2563eb;"></span>
-                <span class="legend-label">Invoice Amount</span>
+                <span class="legend-label">{{ trendData().metricLabel || 'Amount' }}</span>
                 <span class="legend-meta">Total: {{ formatCompactCurrency(activeTotalAmount()) }}</span>
               </div>
               @if (trendData().hasInvoiceCount) {
                 <div class="legend-item" (mouseenter)="hoveredSeries.set('count')" (mouseleave)="hoveredSeries.set(null)">
                   <span class="legend-color-dot" style="background: #d97706;"></span>
-                  <span class="legend-label">Invoice Count</span>
-                  <span class="legend-meta">Volume metrics</span>
+                  <span class="legend-label">{{ trendData().secondaryMetricLabel || 'Volume' }}</span>
+                  <span class="legend-meta">Secondary metric</span>
                 </div>
               }
-            }
-            @if (selectedType() === 'pareto') {
-              <div class="legend-item">
-                <span class="legend-color-line" style="border-top: 2px dashed #f59e0b;"></span>
-                <span class="legend-label">Cumulative % (80/20 Rule)</span>
-              </div>
             }
           </div>
         }
@@ -477,7 +557,7 @@ interface MonthOption {
             <svg
               #chartSvg
               class="trend-svg"
-              [attr.viewBox]="'0 0 ' + viewportSvgWidth() + ' 290'"
+              [attr.viewBox]="'0 0 ' + viewportSvgWidth() + ' 310'"
               preserveAspectRatio="none"
             >
               <defs>
@@ -498,6 +578,53 @@ interface MonthOption {
                   <stop offset="50%" stop-color="#3b82f6" stop-opacity="0.20"/>
                   <stop offset="100%" stop-color="#60a5fa" stop-opacity="0.02"/>
                 </linearGradient>
+                <!-- 3D Isometric Facet Gradients for 10 Executive Palette Colors -->
+                @for (shade of paletteShades; track $index) {
+                  <linearGradient [id]="'bar3dFrontGrad_' + $index" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%" [attr.stop-color]="shade.light"/>
+                    <stop offset="35%" [attr.stop-color]="shade.base"/>
+                    <stop offset="100%" [attr.stop-color]="shade.dark"/>
+                  </linearGradient>
+                  <linearGradient [id]="'bar3dTopGrad_' + $index" x1="0%" y1="100%" x2="100%" y2="0%">
+                    <stop offset="0%" [attr.stop-color]="shade.lighter"/>
+                    <stop offset="100%" stop-color="#ffffff"/>
+                  </linearGradient>
+                  <linearGradient [id]="'bar3dSideGrad_' + $index" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" [attr.stop-color]="shade.dark"/>
+                    <stop offset="100%" [attr.stop-color]="shade.darker"/>
+                  </linearGradient>
+                }
+                <!-- Fallback defaults -->
+                <linearGradient id="bar3dFrontGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stop-color="#60a5fa"/>
+                  <stop offset="35%" stop-color="#2563eb"/>
+                  <stop offset="100%" stop-color="#1e40af"/>
+                </linearGradient>
+                <linearGradient id="bar3dTopGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+                  <stop offset="0%" stop-color="#93c5fd"/>
+                  <stop offset="100%" stop-color="#eff6ff"/>
+                </linearGradient>
+                <linearGradient id="bar3dSideGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#1e3a8a"/>
+                  <stop offset="100%" stop-color="#0f172a"/>
+                </linearGradient>
+
+                <linearGradient id="hist3dFrontGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stop-color="#38bdf8"/>
+                  <stop offset="40%" stop-color="#0284c7"/>
+                  <stop offset="100%" stop-color="#0369a1"/>
+                </linearGradient>
+                <linearGradient id="hist3dTopGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+                  <stop offset="0%" stop-color="#bae6fd"/>
+                  <stop offset="100%" stop-color="#f0f9ff"/>
+                </linearGradient>
+                <linearGradient id="hist3dSideGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#075985"/>
+                  <stop offset="100%" stop-color="#082f49"/>
+                </linearGradient>
+                <filter id="donut3dDepth" x="-20%" y="-20%" width="150%" height="150%">
+                  <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#0f172a" flood-opacity="0.22"/>
+                </filter>
               </defs>
 
               <!-- Grid & Y-Axis (Numeric metric only, zero month concatenations) -->
@@ -508,16 +635,6 @@ interface MonthOption {
                     <text class="axis-label y-axis-label" [attr.x]="gridLeft - 10" [attr.y]="tick.y + 4" text-anchor="end">{{ tick.label }}</text>
                   }
                   <line class="baseline" [attr.x1]="gridLeft" [attr.y1]="baseY" [attr.x2]="gridRight()" [attr.y2]="baseY"/>
-
-                  <!-- Right Y-Axis for Pareto or Dual Axis -->
-                  @if (selectedType() === 'pareto') {
-                    @for (pct of [0, 25, 50, 75, 100]; track pct) {
-                      <text class="axis-label right-y-axis" [attr.x]="gridRight() + 10" [attr.y]="baseY - (pct / 100) * (baseY - plotTop) + 4">{{ pct }}%</text>
-                    }
-                    <!-- 80% Benchmark Line -->
-                    <line class="pareto-benchmark-line" [attr.x1]="gridLeft" [attr.y1]="baseY - 0.8 * (baseY - plotTop)" [attr.x2]="gridRight()" [attr.y2]="baseY - 0.8 * (baseY - plotTop)"/>
-                    <text class="pareto-80-label" [attr.x]="gridRight() - 30" [attr.y]="baseY - 0.8 * (baseY - plotTop) - 4">80% Threshold</text>
-                  }
                 </g>
               }
 
@@ -537,9 +654,21 @@ interface MonthOption {
                         (mouseenter)="onElementHover(item, $event)"
                         (mouseleave)="onElementLeave()"
                       >
-                        <circle class="point-halo" [attr.cx]="item.slotCenter" [attr.cy]="item.y" r="12"/>
-                        <circle class="point-outer primary" [attr.cx]="item.slotCenter" [attr.cy]="item.y" r="4.5"/>
-                        <circle class="point-inner primary" [attr.cx]="item.slotCenter" [attr.cy]="item.y" r="2.2"/>
+                        <circle class="point-halo" [attr.cx]="item.slotCenter" [attr.cy]="item.y" r="13" [attr.fill]="getEntityColor(item.point.pointIndex)" fill-opacity="0.16"/>
+                        <circle class="point-outer primary" [attr.cx]="item.slotCenter" [attr.cy]="item.y" r="5" fill="#ffffff" [attr.stroke]="getEntityColor(item.point.pointIndex)" stroke-width="2.5"/>
+                        <circle class="point-inner primary" [attr.cx]="item.slotCenter" [attr.cy]="item.y" r="2.4" [attr.fill]="getEntityColor(item.point.pointIndex)"/>
+                        <text
+                          class="line-point-label"
+                          [attr.x]="item.slotCenter"
+                          [attr.y]="item.y - 10"
+                          text-anchor="middle"
+                          font-size="10.5"
+                          font-weight="700"
+                          font-family="var(--font-mono)"
+                          [attr.fill]="getEntityColor(item.point.pointIndex)"
+                        >
+                          {{ formatCompactCurrency(item.point.amount) }}
+                        </text>
                         @if (selectedType() === 'multi-line' && item.countY !== undefined) {
                           <circle class="point-outer secondary" [attr.cx]="item.slotCenter" [attr.cy]="item.countY" r="4"/>
                         }
@@ -641,7 +770,7 @@ interface MonthOption {
                   @if (!isMultiSeries() && selectedType() === 'bar') {
                     @for (item of calculatedPoints(); track item.point.pointIndex) {
                       <g
-                        class="bar-column-group"
+                        class="bar-column-group bar-3d-group"
                         [class.selected]="selectedMonth() === item.point.month"
                         (click)="toggleMonthSelection(item.point)"
                         (mouseenter)="onElementHover(item, $event)"
@@ -652,34 +781,65 @@ interface MonthOption {
                           [attr.x]="item.slotCenter - slotWidth() / 2"
                           [attr.y]="plotTop"
                           [attr.width]="slotWidth()"
-                          [attr.height]="baseY - plotTop + 24"
+                          [attr.height]="baseY - plotTop + 40"
                           fill="transparent"
                           cursor="pointer"
                         />
                         <rect
                           class="bar-hover-bg"
-                          [attr.x]="item.slotCenter - item.barWidth / 2 - 3"
+                          [attr.x]="item.x - 4"
                           [attr.y]="plotTop"
-                          [attr.width]="item.barWidth + 6"
-                          [attr.height]="baseY - plotTop"
-                          rx="4"
+                          [attr.width]="item.barWidth + 8 + getBar3dDepthX(item.barWidth)"
+                          [attr.height]="baseY - plotTop + 4"
+                          rx="6"
                         />
+                        <!-- Ground Cast Shadow -->
+                        <ellipse
+                          class="bar-ground-shadow"
+                          [attr.cx]="item.x + item.barWidth / 2 + getBar3dDepthX(item.barWidth) / 2"
+                          [attr.cy]="baseY + 3"
+                          [attr.rx]="item.barWidth * 0.54"
+                          [attr.ry]="3.5"
+                          fill="rgba(15, 23, 42, 0.16)"
+                        />
+                        <!-- 3D Front Face -->
                         <rect
-                          class="bar-front"
+                          class="bar-front-3d"
                           [attr.x]="item.x"
                           [attr.y]="item.y"
                           [attr.width]="item.barWidth"
                           [attr.height]="item.height"
-                          fill="#2563eb"
-                          rx="3"
+                          [attr.fill]="'url(#bar3dFrontGrad_' + (item.point.pointIndex % 10) + ')'"
+                          rx="2"
                         />
+                        <!-- 3D Top Cap Polygon -->
+                        <polygon
+                          class="bar-top-3d"
+                          [attr.points]="getBar3dTopPoints(item.x, item.y, item.barWidth)"
+                          [attr.fill]="'url(#bar3dTopGrad_' + (item.point.pointIndex % 10) + ')'"
+                        />
+                        <!-- 3D Right Side Extrusion Polygon -->
+                        <polygon
+                          class="bar-side-3d"
+                          [attr.points]="getBar3dSidePoints(item.x, item.y, item.barWidth, item.height)"
+                          [attr.fill]="'url(#bar3dSideGrad_' + (item.point.pointIndex % 10) + ')'"
+                        />
+                        <!-- Top 3D Value Label -->
+                        <text
+                          class="bar-top-value-label"
+                          [attr.x]="item.x + item.barWidth / 2 + getBar3dDepthX(item.barWidth) / 2"
+                          [attr.y]="item.y - getBar3dDepthY(item.barWidth) - 4"
+                          text-anchor="middle"
+                        >
+                          {{ formatCompactCurrency(item.point.amount) }}
+                        </text>
                       </g>
                     }
                   } @else if (isMultiSeries()) {
                     <!-- Grouped / Clustered Bars for Multi-Entity -->
                     @for (item of calculatedPoints(); track item.point.pointIndex) {
                       <g
-                        class="bar-column-group multi-group"
+                        class="bar-column-group multi-group bar-3d-group"
                         [class.selected]="selectedMonth() === item.point.month"
                         (click)="toggleMonthSelection(item.point)"
                         (mouseenter)="onElementHover(item, $event)"
@@ -690,29 +850,55 @@ interface MonthOption {
                           [attr.x]="item.slotCenter - slotWidth() / 2"
                           [attr.y]="plotTop"
                           [attr.width]="slotWidth()"
-                          [attr.height]="baseY - plotTop + 24"
+                          [attr.height]="baseY - plotTop + 40"
                           fill="transparent"
                           cursor="pointer"
                         />
                         <rect
                           class="bar-hover-bg"
-                          [attr.x]="item.slotCenter - slotWidth() * 0.45"
+                          [attr.x]="item.slotCenter - slotWidth() * 0.46"
                           [attr.y]="plotTop"
-                          [attr.width]="slotWidth() * 0.9"
-                          [attr.height]="baseY - plotTop"
-                          rx="4"
+                          [attr.width]="slotWidth() * 0.92"
+                          [attr.height]="baseY - plotTop + 4"
+                          rx="6"
                         />
                         @for (s of activeSeriesList(); track s.id; let sIdx = $index) {
                           @if (getEntityBar(item, s, sIdx, activeSeriesList().length); as b) {
-                            <rect
-                              class="bar-front multi-entity-bar"
-                              [attr.x]="b.x"
-                              [attr.y]="b.y"
-                              [attr.width]="b.width"
-                              [attr.height]="b.height"
-                              [attr.fill]="s.color"
-                              rx="2.5"
-                            />
+                            <g class="bar-3d-entity-column">
+                              <!-- Entity Ground Shadow -->
+                              <ellipse
+                                class="bar-ground-shadow"
+                                [attr.cx]="b.x + b.width / 2 + getBar3dDepthX(b.width) / 2"
+                                [attr.cy]="baseY + 2"
+                                [attr.rx]="b.width * 0.5"
+                                [attr.ry]="2.5"
+                                fill="rgba(15, 23, 42, 0.12)"
+                              />
+                              <!-- Entity Front Face -->
+                              <rect
+                                class="bar-front-3d multi-entity-bar"
+                                [attr.x]="b.x"
+                                [attr.y]="b.y"
+                                [attr.width]="b.width"
+                                [attr.height]="b.height"
+                                [attr.fill]="s.color"
+                                rx="2"
+                              />
+                              <!-- Entity Top Cap -->
+                              <polygon
+                                class="bar-top-3d"
+                                [attr.points]="getBar3dTopPoints(b.x, b.y, b.width)"
+                                [attr.fill]="s.color"
+                                fill-opacity="0.65"
+                              />
+                              <!-- Entity Side Face -->
+                              <polygon
+                                class="bar-side-3d"
+                                [attr.points]="getBar3dSidePoints(b.x, b.y, b.width, b.height)"
+                                [attr.fill]="s.color"
+                                fill-opacity="0.85"
+                              />
+                            </g>
                           }
                         }
                       </g>
@@ -822,24 +1008,63 @@ interface MonthOption {
                 </g>
               }
 
-              <!-- ── G. HISTOGRAM RENDERER (Amount Distribution) ── -->
+              <!-- ── G. HISTOGRAM RENDERER (Amount Distribution in 3D) ── -->
               @if (selectedType() === 'histogram') {
                 <g class="histogram-layer">
                   @for (bin of histogramBins(); track bin.binIndex) {
-                    <g class="histogram-bin-group">
+                    <g
+                      class="histogram-bin-group bar-3d-group"
+                      (mouseenter)="onElementHover({ point: bin.points[0] || { month: bin.label, shortMonth: bin.label, amount: bin.count, currencySymbol: '', pointIndex: bin.binIndex, sortKey: bin.binIndex, rawAmount: bin.count + ' transactions' }, x: getHistBinX(bin.binIndex) + getHistBinWidth() / 2, y: getHistBinY(bin.count) }, $event)"
+                      (mouseleave)="onElementLeave()"
+                    >
+                      <!-- Ground Shadow -->
+                      <ellipse
+                        class="bar-ground-shadow"
+                        [attr.cx]="getHistBinX(bin.binIndex) + getHistBinWidth() / 2 + getBar3dDepthX(getHistBinWidth()) / 2"
+                        [attr.cy]="baseY + 3"
+                        [attr.rx]="getHistBinWidth() * 0.52"
+                        [attr.ry]="3.2"
+                        fill="rgba(15, 23, 42, 0.16)"
+                      />
+                      <!-- 3D Front Face -->
                       <rect
-                        class="hist-bar"
+                        class="hist-bar bar-front-3d"
                         [attr.x]="getHistBinX(bin.binIndex)"
                         [attr.y]="getHistBinY(bin.count)"
                         [attr.width]="getHistBinWidth()"
                         [attr.height]="Math.max(baseY - getHistBinY(bin.count), 2)"
-                        fill="#0284c7"
-                        rx="3"
+                        fill="url(#hist3dFrontGrad)"
+                        rx="2"
                       />
-                      <text class="hist-count-label" [attr.x]="getHistBinX(bin.binIndex) + getHistBinWidth() / 2" [attr.y]="getHistBinY(bin.count) - 6" text-anchor="middle">
+                      <!-- 3D Top Cap Polygon -->
+                      <polygon
+                        class="bar-top-3d"
+                        [attr.points]="getBar3dTopPoints(getHistBinX(bin.binIndex), getHistBinY(bin.count), getHistBinWidth())"
+                        fill="url(#hist3dTopGrad)"
+                      />
+                      <!-- 3D Right Side Extrusion Polygon -->
+                      <polygon
+                        class="bar-side-3d"
+                        [attr.points]="getBar3dSidePoints(getHistBinX(bin.binIndex), getHistBinY(bin.count), getHistBinWidth(), Math.max(baseY - getHistBinY(bin.count), 2))"
+                        fill="url(#hist3dSideGrad)"
+                      />
+                      <!-- Frequency Count Label -->
+                      <text
+                        class="hist-count-label"
+                        [attr.x]="getHistBinX(bin.binIndex) + getHistBinWidth() / 2 + getBar3dDepthX(getHistBinWidth()) / 2"
+                        [attr.y]="getHistBinY(bin.count) - getBar3dDepthY(getHistBinWidth()) - 4"
+                        text-anchor="middle"
+                      >
                         {{ bin.count }} ({{ bin.percent }}%)
                       </text>
-                      <text class="hist-x-label" [attr.x]="getHistBinX(bin.binIndex) + getHistBinWidth() / 2" [attr.y]="baseY + 18" text-anchor="middle">
+                      <!-- Uncongested Angled X-Axis Bracket Label -->
+                      <text
+                        class="hist-x-label rotated-x-label"
+                        [attr.x]="getHistBinX(bin.binIndex) + getHistBinWidth() / 2"
+                        [attr.y]="baseY + 16"
+                        [attr.transform]="'rotate(-24 ' + (getHistBinX(bin.binIndex) + getHistBinWidth() / 2) + ' ' + (baseY + 16) + ')'"
+                        text-anchor="end"
+                      >
                         {{ bin.label }}
                       </text>
                     </g>
@@ -864,7 +1089,13 @@ interface MonthOption {
                       <text class="wf-val-label" [attr.x]="getWaterfallX($index) + getWaterfallWidth() / 2" [attr.y]="getWaterfallY(step) - 6" text-anchor="middle">
                         {{ step.changeFormatted }}
                       </text>
-                      <text class="axis-label x-axis-label" [attr.x]="getWaterfallX($index) + getWaterfallWidth() / 2" [attr.y]="baseY + 18" text-anchor="middle">
+                      <text
+                        class="axis-label x-axis-label rotated-x-label"
+                        [attr.x]="getWaterfallX($index) + getWaterfallWidth() / 2"
+                        [attr.y]="baseY + 16"
+                        [attr.transform]="'rotate(-28 ' + (getWaterfallX($index) + getWaterfallWidth() / 2) + ' ' + (baseY + 16) + ')'"
+                        text-anchor="end"
+                      >
                         {{ step.shortLabel }}
                       </text>
                     </g>
@@ -872,36 +1103,11 @@ interface MonthOption {
                 </g>
               }
 
-              <!-- ── I. PARETO RENDERER (Ranked 80/20 Contribution) ── -->
-              @if (selectedType() === 'pareto') {
-                <g class="pareto-layer">
-                  @for (item of paretoItems(); track item.point.pointIndex) {
-                    <g class="pareto-bar-group" (mouseenter)="onElementHover(getParetoHover(item, $index), $event)" (mouseleave)="onElementLeave()">
-                      <rect
-                        class="pareto-bar"
-                        [attr.x]="getParetoX($index)"
-                        [attr.y]="getParetoY(item.amount)"
-                        [attr.width]="getParetoWidth()"
-                        [attr.height]="Math.max(baseY - getParetoY(item.amount), 2)"
-                        fill="#3b82f6"
-                        rx="2"
-                      />
-                      <text class="axis-label x-axis-label" [attr.x]="getParetoX($index) + getParetoWidth() / 2" [attr.y]="baseY + 18" text-anchor="middle">
-                        {{ item.point.shortMonth }}
-                      </text>
-                    </g>
-                  }
-                  <!-- Cumulative percentage curve -->
-                  <path class="pareto-curve" [attr.d]="paretoCurveD()" fill="none" stroke="#f59e0b" stroke-width="2.5"/>
-                  @for (item of paretoItems(); track item.point.pointIndex) {
-                    <circle [attr.cx]="getParetoX($index) + getParetoWidth() / 2" [attr.cy]="getParetoPctY(item.cumulativePercent)" r="3" fill="#f59e0b" stroke="#ffffff" stroke-width="1.5"/>
-                  }
-                </g>
-              }
-
-              <!-- ── J. DONUT RENDERER (Composition & Share) ── -->
+              <!-- ── I. DONUT RENDERER (3D Composition & Share) ── -->
               @if (selectedType() === 'donut') {
-                <g class="donut-layer" transform="translate(40, 10)">
+                <g class="donut-layer" transform="translate(40, 10)" filter="url(#donut3dDepth)">
+                  <!-- 3D Isometric Base Shadow Ring -->
+                  <circle cx="140" cy="142" r="95" fill="rgba(15, 23, 42, 0.12)" />
                   <g class="donut-slices-group">
                     @for (slice of donutSlices(); track slice.label) {
                       <path
@@ -912,10 +1118,10 @@ interface MonthOption {
                         (mouseleave)="hoveredDonut.set(null)"
                       />
                     }
-                    <!-- Center Hole Content -->
-                    <circle cx="140" cy="135" r="54" fill="var(--card-surface)" stroke="var(--border-color)" stroke-width="1"/>
+                    <!-- Center Hole Content with 3D Bevel -->
+                    <circle cx="140" cy="135" r="54" fill="var(--card-surface)" stroke="var(--border-color)" stroke-width="1.5"/>
                     <text x="140" y="130" text-anchor="middle" class="donut-center-total">{{ formatCompactCurrency(activeTotalAmount()) }}</text>
-                    <text x="140" y="146" text-anchor="middle" class="donut-center-sub">Total Spend</text>
+                    <text x="140" y="146" text-anchor="middle" class="donut-center-sub">{{ trendData().metricLabel || 'Total' }}</text>
                   </g>
                   <!-- Donut Legend Table on Right -->
                   <g class="donut-legend" transform="translate(290, 20)">
@@ -931,8 +1137,8 @@ interface MonthOption {
                 </g>
               }
 
-              <!-- ── X-Axis Labels (Dates/Months, dynamically thinned on large sets) ── -->
-              @if (selectedType() !== 'histogram' && selectedType() !== 'donut' && selectedType() !== 'waterfall' && selectedType() !== 'pareto') {
+              <!-- ── X-Axis Labels (Dates/Entities, rotatable to never congest) ── -->
+              @if (selectedType() !== 'histogram' && selectedType() !== 'donut' && selectedType() !== 'waterfall') {
                 <g class="x-axis-layer">
                   @for (item of calculatedPoints(); track item.point.pointIndex) {
                     @if (shouldRenderXLabel($index, calculatedPoints().length)) {
@@ -942,12 +1148,26 @@ interface MonthOption {
                         (click)="toggleMonthSelection(item.point)"
                         cursor="pointer"
                       >
-                        <text class="axis-label x-axis-label"
-                          [attr.x]="item.slotCenter"
-                          [attr.y]="baseY + 20"
-                          text-anchor="middle">
-                          {{ item.point.shortMonth }}
-                        </text>
+                        @if (isRotatedXLabel(calculatedPoints().length)) {
+                          <text
+                            class="axis-label x-axis-label rotated-x-label"
+                            [attr.x]="item.slotCenter"
+                            [attr.y]="baseY + 16"
+                            [attr.transform]="'rotate(-28 ' + item.slotCenter + ' ' + (baseY + 16) + ')'"
+                            text-anchor="end"
+                          >
+                            {{ item.point.shortMonth }}
+                          </text>
+                        } @else {
+                          <text
+                            class="axis-label x-axis-label"
+                            [attr.x]="item.slotCenter"
+                            [attr.y]="baseY + 20"
+                            text-anchor="middle"
+                          >
+                            {{ item.point.shortMonth }}
+                          </text>
+                        }
                         @if (selectedMonth() === item.point.month) {
                           <rect [attr.x]="item.slotCenter - 10" [attr.y]="baseY + 26" width="20" height="2.5" rx="1" class="label-active-indicator"/>
                         }
@@ -983,12 +1203,12 @@ interface MonthOption {
                 </div>
               } @else {
                 <div class="tooltip-amount-row">
-                  <span class="tooltip-label">Invoice Amount</span>
+                  <span class="tooltip-label">{{ trendData().metricLabel || 'Amount' }}</span>
                   <span class="tooltip-amount">{{ hoveredPoint()!.point.rawAmount }}</span>
                 </div>
                 @if (hoveredPoint()!.point.invoiceCount) {
                   <div class="tooltip-count-row">
-                    <span class="tooltip-label">Invoice Volume</span>
+                    <span class="tooltip-label">{{ trendData().secondaryMetricLabel || 'Volume' }}</span>
                     <span class="tooltip-count">{{ hoveredPoint()!.point.invoiceCount }}</span>
                   </div>
                 }
@@ -997,23 +1217,93 @@ interface MonthOption {
           }
         </div>
 
-        <!-- ── 7. MONTH FOCUS CARD ── -->
+        <!-- ── 6b. ADAPTIVE SIDE-BY-SIDE COMPARISON ANALYSIS TABLE ── -->
+        @if (comparisonTableRows().length >= 2) {
+          <div class="comparison-analysis-card">
+            <div class="comparison-card-header">
+              <div class="comp-title-group">
+                <div class="comp-icon-box">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2">
+                    <path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/>
+                  </svg>
+                </div>
+                <div>
+                  <h5 class="comp-title">{{ dimensionLabel() }} Comparison Analysis</h5>
+                  @if (headToHeadSummary()) {
+                    <p class="head-to-head-callout">{{ headToHeadSummary() }}</p>
+                  }
+                </div>
+              </div>
+              <span class="comp-count-pill">{{ comparisonTableRows().length }} {{ dimensionLabel() }}s Compared</span>
+            </div>
+
+            <div class="comp-table-container">
+              <table class="comp-table">
+                <thead>
+                  <tr>
+                    <th>{{ dimensionLabel() }}</th>
+                    <th class="text-right">{{ trendData().metricLabel || 'Value' }}</th>
+                    <th class="text-right">Share of Total</th>
+                    <th class="text-right">Variance vs Leader</th>
+                    <th class="text-center">Evaluation</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (row of comparisonTableRows(); track row.entityName) {
+                    <tr [class.leader-row]="row.isLeader">
+                      <td class="comp-entity-col">
+                        <span class="comp-color-dot" [style.background-color]="row.color"></span>
+                        <span class="comp-entity-name">{{ row.entityName }}</span>
+                        @if (row.isLeader) {
+                          <span class="comp-leader-badge">Top Performer</span>
+                        }
+                      </td>
+                      <td class="text-right font-mono font-bold">{{ row.rawAmount }}</td>
+                      <td class="text-right">
+                        <div class="comp-share-cell">
+                          <div class="comp-share-bar" [style.width.%]="row.sharePct" [style.background-color]="row.color"></div>
+                          <span class="font-mono text-xs">{{ row.sharePct }}%</span>
+                        </div>
+                      </td>
+                      <td class="text-right font-mono text-xs">
+                        @if (row.isLeader) {
+                          <span class="comp-baseline-tag">Baseline</span>
+                        } @else {
+                          <span class="comp-delta-val" [class.negative]="row.diffFromLeader < 0" [class.positive]="row.diffFromLeader > 0">
+                            {{ row.diffFormatted }} ({{ row.diffPercentFormatted }})
+                          </span>
+                        }
+                      </td>
+                      <td class="text-center">
+                        <span class="comp-eval-chip" [class.best]="row.isLeader" [class.warn]="row.evaluation === 'Lagging'">
+                          {{ row.evaluation }}
+                        </span>
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </div>
+        }
+
+        <!-- ── 7. FOCUS CARD ── -->
         @if (selectedPoint()) {
           <div class="month-focus-panel">
             <div class="focus-left">
               <div class="focus-badge">
                 <span class="pulse-indicator"></span>
-                Selected Month
+                Selected {{ trendData().dimensionLabel || 'Item' }}
               </div>
               <h4 class="focus-month-title">{{ selectedPoint()!.month }}</h4>
               <div class="focus-metrics-row">
                 <div class="metric-box">
-                  <span class="metric-lbl">Total Invoice Amount</span>
+                  <span class="metric-lbl">{{ trendData().metricLabel || 'Total Amount' }}</span>
                   <span class="metric-val primary">{{ selectedPoint()!.rawAmount }}</span>
                 </div>
                 @if (selectedPoint()!.invoiceCount) {
                   <div class="metric-box">
-                    <span class="metric-lbl">Invoice Volume</span>
+                    <span class="metric-lbl">{{ trendData().secondaryMetricLabel || 'Volume' }}</span>
                     <span class="metric-val secondary">{{ selectedPoint()!.invoiceCount }}</span>
                   </div>
                 }
@@ -1499,6 +1789,89 @@ interface MonthOption {
       }
     }
 
+    /* ── 3D Interactive Animated Bar Chart Styles ── */
+    .bar-3d-group {
+      transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.22s ease;
+      cursor: pointer;
+      &:hover {
+        transform: translateY(-5px);
+        filter: drop-shadow(0 8px 16px rgba(37, 99, 235, 0.35));
+      }
+    }
+    .bar-front-3d {
+      transition: opacity 0.2s ease, filter 0.2s ease;
+      animation: barRise3D 0.5s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+      transform-origin: bottom;
+    }
+    .bar-top-3d {
+      transition: opacity 0.2s ease, filter 0.2s ease;
+      animation: barRise3D 0.5s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+      transform-origin: bottom;
+    }
+    .bar-side-3d {
+      transition: opacity 0.2s ease, filter 0.2s ease;
+      animation: barRise3D 0.5s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+      transform-origin: bottom;
+    }
+    .bar-ground-shadow {
+      transition: transform 0.2s ease, opacity 0.2s ease;
+    }
+    .bar-3d-group:hover .bar-ground-shadow {
+      transform: scale(1.15);
+      opacity: 0.85;
+    }
+    .bar-top-value-label {
+      font-size: 11px;
+      font-weight: 700;
+      fill: var(--foreground, #0f172a);
+      pointer-events: none;
+      opacity: 0.92;
+      transition: opacity 0.2s ease, fill 0.2s ease;
+    }
+    .bar-3d-group:hover .bar-top-value-label {
+      fill: #2563eb;
+      opacity: 1;
+    }
+    .rotated-x-label {
+      font-size: 10.5px;
+      font-weight: 500;
+      fill: var(--text-secondary, #475569);
+      transition: fill 0.2s ease, font-weight 0.2s ease;
+    }
+    .bar-3d-group:hover .rotated-x-label {
+      fill: #2563eb;
+      font-weight: 700;
+    }
+    @keyframes barRise3D {
+      0% {
+        opacity: 0;
+        transform: scaleY(0.05);
+      }
+      100% {
+        opacity: 1;
+        transform: scaleY(1);
+      }
+    }
+    .donut-slice {
+      transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.22s ease;
+      cursor: pointer;
+      &:hover {
+        transform: scale(1.04);
+        filter: drop-shadow(0 4px 10px rgba(15, 23, 42, 0.25));
+      }
+    }
+    .hist-count-label {
+      font-size: 10px;
+      font-weight: 600;
+      fill: #0369a1;
+      pointer-events: none;
+    }
+    .hist-x-label {
+      font-size: 10.5px;
+      font-weight: 500;
+      fill: var(--text-secondary, #475569);
+    }
+
 
     .chart-tooltip {
       position: absolute;
@@ -1628,6 +2001,226 @@ interface MonthOption {
       &:hover { border-color: var(--primary-accent); color: var(--primary-accent); }
     }
 
+    /* Scenario-Adaptive Entity Comparison Filter Bar */
+    .entity-filter-bar {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 9px 12px;
+      margin: 10px 0 12px;
+      background: var(--secondary-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-card);
+    }
+    .entity-filter-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .entity-filter-label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--muted-text);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .entity-filter-hint {
+      font-size: 0.7rem;
+      color: var(--muted-text);
+      opacity: 0.85;
+    }
+    .entity-filter-pills-wrap {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .entity-pill-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: var(--radius-pill);
+      background: var(--card-surface);
+      border: 1px solid var(--border-color);
+      color: var(--foreground);
+      font-size: 0.76rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      &:hover {
+        border-color: var(--primary-accent);
+        transform: translateY(-1px);
+      }
+      &.active {
+        background: var(--primary-accent);
+        color: #ffffff;
+        border-color: var(--primary-accent);
+        box-shadow: 0 2px 6px rgba(37, 99, 235, 0.3);
+        .entity-color-dot {
+          box-shadow: 0 0 0 1.5px #ffffff;
+        }
+      }
+      &.all-pill {
+        font-weight: 700;
+      }
+    }
+    .entity-color-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* Side-by-Side Comparison Analysis Table */
+    .comparison-analysis-card {
+      background: var(--card-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-card);
+      padding: 14px 16px;
+      margin-top: 14px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      animation: fadeIn 200ms ease;
+    }
+    .comparison-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .comp-title-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .comp-icon-box {
+      width: 26px;
+      height: 26px;
+      border-radius: 6px;
+      background: oklch(0.58 0.16 256 / 0.1);
+      border: 1px solid oklch(0.58 0.16 256 / 0.25);
+      color: var(--primary-accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .comp-title {
+      font-size: 0.84rem;
+      font-weight: 700;
+      color: var(--foreground);
+      margin: 0;
+    }
+    .head-to-head-callout {
+      font-size: 0.74rem;
+      font-weight: 600;
+      color: var(--primary-accent);
+      margin: 2px 0 0;
+    }
+    .comp-count-pill {
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: var(--muted-text);
+      background: var(--secondary-surface);
+      padding: 2px 8px;
+      border-radius: var(--radius-pill);
+      border: 1px solid var(--border-color);
+    }
+    .comp-table-container {
+      overflow-x: auto;
+      border-radius: var(--radius-base);
+    }
+    .comp-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+      th {
+        padding: 7px 10px;
+        background: var(--secondary-surface);
+        color: var(--muted-text);
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        border-bottom: 1px solid var(--border-color);
+      }
+      td {
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--border-color);
+        color: var(--foreground);
+      }
+      tr:last-child td {
+        border-bottom: none;
+      }
+      tr.leader-row td {
+        background: oklch(0.58 0.16 256 / 0.03);
+      }
+    }
+    .comp-entity-col {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .comp-color-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .comp-entity-name {
+      font-family: var(--font-mono);
+      font-weight: 600;
+      color: var(--foreground);
+    }
+    .comp-leader-badge {
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: #dcfce7;
+      color: #15803d;
+      margin-left: 4px;
+    }
+    .comp-share-cell {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      justify-content: flex-end;
+    }
+    .comp-share-bar {
+      height: 6px;
+      border-radius: 3px;
+      max-width: 60px;
+      min-width: 4px;
+    }
+    .comp-baseline-tag {
+      color: var(--muted-text);
+      font-style: italic;
+    }
+    .comp-delta-val {
+      font-weight: 600;
+      &.negative { color: #dc2626; }
+      &.positive { color: #16a34a; }
+    }
+    .comp-eval-chip {
+      font-size: 0.68rem;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: var(--radius-pill);
+      background: var(--secondary-surface);
+      color: var(--muted-text);
+      &.best { background: #dcfce7; color: #15803d; }
+      &.warn { background: #fee2e2; color: #b91c1c; }
+    }
+
     @keyframes fadeIn {
       from { opacity: 0; transform: translateY(4px); }
       to { opacity: 1; transform: translateY(0); }
@@ -1637,6 +2230,64 @@ interface MonthOption {
 export class TrendChartComponent {
   readonly trendData = input.required<TrendSeries>();
   readonly userQuery = input<string>('');
+
+  readonly paletteShades = PALETTE_SHADES;
+
+  getEntityColor(idx: number): string {
+    return EXECUTIVE_PALETTE[idx % EXECUTIVE_PALETTE.length];
+  }
+
+  readonly dimensionLabel = computed<string>(() => {
+    const custom = this.trendData().dimensionLabel;
+    if (custom) return custom;
+    const labels = this.trendData().points.map(p => p.month);
+    return inferDimensionFromLabels(labels, this.userQuery());
+  });
+
+  readonly isComparisonScenario = computed<boolean>(() => {
+    const td = this.trendData();
+    if (td.categoryType === 'category') return true;
+    const q = (this.userQuery() || '').toLowerCase();
+    if (/\b(compare|comparison|versus|vs|between|difference|vendor|supplier|product|plant|warehouse|customer|brand)\b/i.test(q)) {
+      return true;
+    }
+    const hasDates = td.points.some(p => p.sortKey > 0);
+    return !hasDates || td.points.length <= 8;
+  });
+
+  readonly allEntities = computed(() => {
+    return this.trendData().points.map((p, idx) => ({
+      id: p.month,
+      label: p.shortMonth || p.month,
+      pointIndex: p.pointIndex !== undefined ? p.pointIndex : idx,
+      color: this.getEntityColor(p.pointIndex !== undefined ? p.pointIndex : idx)
+    }));
+  });
+
+  readonly selectedEntityIds = signal<string[]>([]);
+
+  isEntitySelected(id: string): boolean {
+    const sel = this.selectedEntityIds();
+    return sel.length === 0 || sel.includes(id);
+  }
+
+  toggleEntityFilter(id: string): void {
+    const current = this.selectedEntityIds();
+    if (current.length === 0) {
+      this.selectedEntityIds.set([id]);
+      return;
+    }
+    if (current.includes(id)) {
+      const next = current.filter(x => x !== id);
+      this.selectedEntityIds.set(next);
+    } else {
+      this.selectedEntityIds.set([...current, id]);
+    }
+  }
+
+  selectAllEntities(): void {
+    this.selectedEntityIds.set([]);
+  }
 
   readonly isConfirmed = signal<boolean | null>(null);
   readonly isClarified = signal<boolean>(false);
@@ -1679,8 +2330,8 @@ export class TrendChartComponent {
   readonly Math = Math;
 
   readonly gridLeft = 65;
-  readonly plotTop = 36;
-  readonly baseY = 236;
+  readonly plotTop = 30;
+  readonly baseY = 226;
 
   readonly queryAnalysis = computed<UserQueryAnalysis>(() => {
     return analyzeUserQuery(this.userQuery(), this.trendData().points);
@@ -1866,6 +2517,14 @@ export class TrendChartComponent {
     const all = this.trendData().points;
     if (!all || all.length === 0) return [];
 
+    if (this.isComparisonScenario()) {
+      const selected = this.selectedEntityIds();
+      if (selected.length > 0) {
+        return all.filter(p => selected.includes(p.month));
+      }
+      return all;
+    }
+
     const fromIdx = this.selectedFromIdx();
     const toIdx = this.selectedToIdx();
 
@@ -1881,6 +2540,65 @@ export class TrendChartComponent {
 
     const filtered = all.filter(p => p.sortKey >= minKey && p.sortKey <= maxKey);
     return filtered.sort((a, b) => a.sortKey - b.sortKey);
+  });
+
+  readonly comparisonTableRows = computed<ComparisonTableRow[]>(() => {
+    const points = this.activePoints();
+    if (!points || points.length < 2) return [];
+
+    const total = points.reduce((acc, p) => acc + Math.abs(p.amount), 0);
+    const sorted = [...points].sort((a, b) => b.amount - a.amount);
+    const leader = sorted[0];
+
+    return points.map(p => {
+      const isLeader = p.pointIndex === leader.pointIndex;
+      const sharePct = total > 0 ? Math.round((Math.abs(p.amount) / total) * 1000) / 10 : 0;
+      const diffFromLeader = p.amount - leader.amount;
+      const diffFormatted = isLeader ? 'Baseline' : this._formatDiffAmount(diffFromLeader);
+      const diffPercentFormatted = isLeader
+        ? '0%'
+        : (leader.amount !== 0
+            ? `${diffFromLeader > 0 ? '+' : ''}${((diffFromLeader / leader.amount) * 100).toFixed(1)}%`
+            : '0%');
+
+      let evaluation = 'Lagging';
+      if (isLeader) {
+        evaluation = 'Top Performer';
+      } else if (leader.amount > 0 && p.amount >= leader.amount * 0.8) {
+        evaluation = 'Competitive';
+      }
+
+      return {
+        entityName: p.month,
+        color: this.getEntityColor(p.pointIndex),
+        amount: p.amount,
+        rawAmount: p.rawAmount || this.formatCompactCurrency(p.amount),
+        sharePct,
+        diffFromLeader,
+        diffFormatted,
+        diffPercentFormatted,
+        isLeader,
+        evaluation
+      };
+    });
+  });
+
+  readonly headToHeadSummary = computed<string | null>(() => {
+    const rows = this.comparisonTableRows();
+    if (rows.length < 2) return null;
+
+    const dim = this.dimensionLabel();
+    const sorted = [...rows].sort((a, b) => b.amount - a.amount);
+    const leader = sorted[0];
+    const runnerUp = sorted[1];
+
+    if (rows.length === 2) {
+      const diff = leader.amount - runnerUp.amount;
+      const diffPct = runnerUp.amount > 0 ? ((diff / runnerUp.amount) * 100).toFixed(1) : '0';
+      return `${leader.entityName} leads ${runnerUp.entityName} by ${this._formatDiffAmount(diff)} (+${diffPct}% higher)`;
+    }
+
+    return `${leader.entityName} is the leading ${dim.toLowerCase()} with ${leader.sharePct}% share, outpacing ${runnerUp.entityName} by ${this._formatDiffAmount(leader.amount - runnerUp.amount)}`;
   });
 
   readonly selectedFromPoint = computed<TrendDataPoint | null>(() => {
@@ -2009,7 +2727,7 @@ export class TrendChartComponent {
   isMultiSeriesVisible(): boolean {
     if (this.isMultiSeries()) return true;
     const t = this.selectedType();
-    return t === 'multi-line' || t === 'grouped-bar' || t === 'stacked-bar' || t === 'pareto';
+    return t === 'multi-line' || t === 'grouped-bar' || t === 'stacked-bar';
   }
 
   // ─── Dynamic Viewport Sizing (Zero data slicing) ───
@@ -2017,7 +2735,7 @@ export class TrendChartComponent {
   readonly viewportSvgWidth = computed<number>(() => {
     const t = this.selectedType();
     if (t === 'donut') return 680;
-    if (t === 'histogram') return Math.max(680, this.histogramBins().length * 110);
+    if (t === 'histogram') return Math.round(Math.max(680, this.histogramBins().length * 140) * this.zoomLevel());
     const count = this.activePoints().length;
     const minWidth = 680;
     const slotW = count <= 8 ? 72 : (count <= 16 ? 54 : (count <= 28 ? 44 : 38));
@@ -2026,7 +2744,7 @@ export class TrendChartComponent {
   });
 
   readonly gridRight = computed<number>(() => {
-    return this.selectedType() === 'pareto' ? this.viewportSvgWidth() - 45 : this.viewportSvgWidth() - 25;
+    return this.viewportSvgWidth() - 30;
   });
 
   // ─── Y-Axis Ticks (Numeric/currency ONLY) ───
@@ -2068,7 +2786,7 @@ export class TrendChartComponent {
     const availW = this.gridRight() - this.gridLeft - 20;
     const availH = this.baseY - this.plotTop;
     const slotW = availW / count;
-    const barW = Math.min(Math.max(slotW * 0.58, 6), 38);
+    const barW = Math.min(Math.max(slotW * 0.62, 26), 68);
 
     return pts.map((pt, i) => {
       const slotCenter = this.gridLeft + 10 + i * slotW + slotW / 2;
@@ -2126,15 +2844,11 @@ export class TrendChartComponent {
   // ─── Specialized Renderers Data ───
 
   readonly histogramBins = computed<HistogramBin[]>(() => {
-    return calculateHistogramBins(this.activePoints(), this._getSanitizedCurrencySymbol(this.trendData().currencySymbol), 6);
+    return calculateHistogramBins(this.activePoints(), this._getSanitizedCurrencySymbol(this.trendData().currencySymbol), 4);
   });
 
   readonly waterfallSteps = computed<WaterfallStep[]>(() => {
     return calculateWaterfallData(this.activePoints(), this._getSanitizedCurrencySymbol(this.trendData().currencySymbol));
-  });
-
-  readonly paretoItems = computed<ParetoItem[]>(() => {
-    return calculateParetoData(this.activePoints());
   });
 
   readonly donutSlices = computed<DonutSlice[]>(() => {
@@ -2222,7 +2936,9 @@ export class TrendChartComponent {
   }
 
   getHistBinWidth(): number {
-    return 65;
+    const count = this.histogramBins().length;
+    const availW = this.gridRight() - this.gridLeft - 30;
+    return Math.round(Math.min(Math.max((availW / (count + 1)) * 0.72, 54), 105));
   }
 
   getWaterfallX(index: number): number {
@@ -2253,53 +2969,32 @@ export class TrendChartComponent {
     return Math.round(Math.min(Math.max((availW / count) * 0.6, 12), 42));
   }
 
-  getParetoX(index: number): number {
-    const count = this.paretoItems().length;
-    const availW = this.gridRight() - this.gridLeft - 20;
-    const slotW = availW / count;
-    const barW = this.getParetoWidth();
-    return Math.round(this.gridLeft + 10 + index * slotW + (slotW - barW) / 2);
+  // ─── 3D Isometric Geometry Helpers ───
+
+  getBar3dDepthX(barWidth: number): number {
+    return Math.round(Math.min(Math.max(barWidth * 0.26, 6), 14));
   }
 
-  getParetoY(amount: number): number {
-    const maxAmount = this._calculateCeiling(this.activeMaxAmount());
-    const availH = this.baseY - this.plotTop;
-    return Math.round(this.baseY - (amount / maxAmount) * availH);
+  getBar3dDepthY(barWidth: number): number {
+    return Math.round(Math.min(Math.max(barWidth * 0.16, 4), 9));
   }
 
-  getParetoPctY(pct: number): number {
-    const availH = this.baseY - this.plotTop;
-    return Math.round(this.baseY - (pct / 100) * availH);
+  getBar3dTopPoints(x: number, y: number, width: number): string {
+    const dx = this.getBar3dDepthX(width);
+    const dy = this.getBar3dDepthY(width);
+    return `${x},${y} ${x + dx},${y - dy} ${x + width + dx},${y - dy} ${x + width},${y}`;
   }
 
-  getParetoWidth(): number {
-    const count = this.paretoItems().length;
-    const availW = this.gridRight() - this.gridLeft - 20;
-    return Math.round(Math.min(Math.max((availW / count) * 0.55, 10), 38));
+  getBar3dSidePoints(x: number, y: number, width: number, height: number): string {
+    const dx = this.getBar3dDepthX(width);
+    const dy = this.getBar3dDepthY(width);
+    const bottom = y + height;
+    return `${x + width},${y} ${x + width + dx},${y - dy} ${x + width + dx},${bottom - dy} ${x + width},${bottom}`;
   }
 
-  paretoCurveD(): string {
-    const items = this.paretoItems();
-    if (!items.length) return '';
-    const points = items.map((it, i) => ({
-      x: this.getParetoX(i) + this.getParetoWidth() / 2,
-      y: this.getParetoPctY(it.cumulativePercent)
-    }));
-    let d = `M ${points[0].x} ${points[0].y}`;
-    for (let i = 0; i < points.length - 1; i++) {
-      const c = points[i], n = points[i + 1];
-      const cx = c.x + (n.x - c.x) / 2;
-      d += ` C ${cx} ${c.y}, ${cx} ${n.y}, ${n.x} ${n.y}`;
-    }
-    return d;
-  }
-
-  getParetoHover(item: ParetoItem, index: number): { point: TrendDataPoint; x: number; y: number } {
-    return {
-      point: item.point,
-      x: this.getParetoX(index) + this.getParetoWidth() / 2,
-      y: this.getParetoY(item.amount)
-    };
+  isRotatedXLabel(count: number): boolean {
+    if (this.trendData().categoryType === 'category') return true;
+    return count > 7;
   }
 
   shouldRenderXLabel(index: number, total: number): boolean {
@@ -2422,8 +3117,8 @@ export class TrendChartComponent {
     const roundedH = Math.max(Math.round(h), 2);
     const roundedY = Math.round(this.baseY - roundedH);
 
-    const clusterW = Math.min(this.slotWidth() * 0.78, 64);
-    const barW = Math.max(Math.floor(clusterW / (activeCount || 1)) - 1.5, 3);
+    const clusterW = Math.min(this.slotWidth() * 0.88, 160);
+    const barW = Math.max(Math.floor(clusterW / (activeCount || 1)) - 2, 8);
     const startX = item.slotCenter - ((activeCount || 1) * barW) / 2;
     const barX = startX + sIdx * barW;
 
@@ -2673,5 +3368,15 @@ export class TrendChartComponent {
       return `${s}${v % 1 === 0 ? v.toFixed(0) : v.toFixed(1)}K`;
     }
     return `${s}${Math.round(val)}`;
+  }
+
+  private _formatDiffAmount(val: number): string {
+    const sym = this._getSanitizedCurrencySymbol(this.trendData().currencySymbol);
+    const absVal = Math.abs(val);
+    const sign = val < 0 ? '-' : '+';
+    if (absVal >= 1e9) return `${sign}${sym}${(absVal / 1e9).toFixed(1)}B`;
+    if (absVal >= 1e6) return `${sign}${sym}${(absVal / 1e6).toFixed(1)}M`;
+    if (absVal >= 1e3) return `${sign}${sym}${(absVal / 1e3).toFixed(1)}K`;
+    return `${sign}${sym}${Math.round(absVal)}`;
   }
 }

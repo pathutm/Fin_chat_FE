@@ -3,13 +3,12 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ChatService } from '../../../core/services/chat.service';
 import { MarkdownFormatterService } from '../../../core/utils/markdown-formatter.util';
-import { TrendChartComponent } from '../chat-message/trend-chart.component';
-import { parseTrendData, TrendSeries } from '../../../core/utils/trend-parser.util';
+import { AnalyticalResponseComponent } from '../chat-message/analytical-response.component';
 
 @Component({
   selector: 'app-chat-thread-view',
   standalone: true,
-  imports: [CommonModule, FormsModule, TrendChartComponent],
+  imports: [CommonModule, FormsModule, AnalyticalResponseComponent],
   template: `
     <div class="thread-container">
       <!-- Header Bar -->
@@ -114,13 +113,12 @@ import { parseTrendData, TrendSeries } from '../../../core/utils/trend-parser.ut
                       </button>
                     </div>
 
-                    <!-- Markdown Content -->
-                    <div class="assistant-markdown-content" [innerHTML]="markdownFormatter.formatMarkdown(msg.content)"></div>
-
-                    <!-- Graphical Trend Visualization -->
-                    @if (getTrendSeries(msg.content); as trend) {
-                      <app-trend-chart [trendData]="trend" [userQuery]="getUserQueryForMessage(msg.id)" />
-                    }
+                    <!-- Dynamic Analytical Response Presentation -->
+                    <app-analytical-response
+                      [content]="msg.content"
+                      [userQuery]="getUserQueryForMessage(msg.id)"
+                      [agent]="msg.agent"
+                    />
 
                     @if (msg.agent) {
                       <div class="assistant-card-footer">
@@ -705,11 +703,6 @@ export class ChatThreadViewComponent implements OnDestroy {
   }
 
   readonly copiedMessageId = signal<string | null>(null);
-
-  getTrendSeries(content?: string): TrendSeries | null {
-    if (!content) return null;
-    return parseTrendData(content);
-  }
 
   getUserQueryForMessage(msgId: string): string {
     const msgs = this.chatService.messages();

@@ -263,10 +263,10 @@ export class ChatHomeViewComponent {
   promptText = '';
 
   readonly samplePrompts = [
-    'Show monthly invoice amount trend',
-    'What is our total outstanding balance?',
-    'List top 5 vendors by spend this quarter',
-    'Analyze working capital metrics',
+    'Compare top 5 vendors by spend and purchase order volume',
+    'Show revenue and invoice amount trends over time',
+    'Break down product standard cost vs actual cost structure',
+    'Analyze working capital ratios and cost variance metrics',
   ];
 
   onKeyDown(event: Event): void {

@@ -1,14 +1,12 @@
-import { Component, input, inject, signal, computed } from '@angular/core';
+import { Component, input, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ChatMessage } from '../../../core/models/chat.model';
-import { MarkdownFormatterService } from '../../../core/utils/markdown-formatter.util';
-import { TrendChartComponent } from './trend-chart.component';
-import { parseTrendData, TrendSeries } from '../../../core/utils/trend-parser.util';
+import { AnalyticalResponseComponent } from './analytical-response.component';
 
 @Component({
   selector: 'app-chat-message',
   standalone: true,
-  imports: [CommonModule, TrendChartComponent],
+  imports: [CommonModule, AnalyticalResponseComponent],
   template: `
     <div class="message-row" [class.user]="message().role === 'user'" [class.assistant]="message().role === 'assistant'">
       <div class="message-bubble" [class.typing]="message().isTyping" [class.assistant-bubble]="message().role === 'assistant'">
@@ -53,12 +51,12 @@ import { parseTrendData, TrendSeries } from '../../../core/utils/trend-parser.ut
                 </button>
               </div>
 
-              <!-- Container Body: Markdown Content -->
-              <div class="assistant-markdown-content" [innerHTML]="markdownFormatter.formatMarkdown(message().content)"></div>
-
-              @if (trendData(); as trend) {
-                <app-trend-chart [trendData]="trend" [userQuery]="userQuery()" />
-              }
+              <!-- Container Body: Dynamic Analytical Response -->
+              <app-analytical-response
+                [content]="message().content"
+                [userQuery]="userQuery()"
+                [agent]="message().agent"
+              />
 
               @if (message().agent) {
                 <div class="assistant-card-footer">
@@ -316,14 +314,7 @@ import { parseTrendData, TrendSeries } from '../../../core/utils/trend-parser.ut
 export class ChatMessageComponent {
   readonly message = input.required<ChatMessage>();
   readonly userQuery = input<string>('');
-  readonly markdownFormatter = inject(MarkdownFormatterService);
   readonly isCopied = signal(false);
-
-  readonly trendData = computed<TrendSeries | null>(() => {
-    const msg = this.message();
-    if (msg.role !== 'assistant' || !msg.content || msg.isTyping) return null;
-    return parseTrendData(msg.content, this.userQuery());
-  });
 
   copyResponseText(text: string): void {
     if (!text) return;
