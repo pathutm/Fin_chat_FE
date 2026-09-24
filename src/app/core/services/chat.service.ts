@@ -78,11 +78,20 @@ export class ChatService {
   /** The active conversation_id — reused for all messages in the same chat */
   readonly activeConversationId = signal<string>('');
 
-  readonly isTyping = signal<boolean>(false);
+  /** Conversation IDs currently waiting for backend response */
+  readonly pendingConvSet = signal<Set<string>>(new Set());
+
+  /** Most recent conversation that was initiated and is still loading */
+  readonly pendingConversationId = signal<string | null>(null);
+
+  /** In-memory cache of messages for pending conversations */
+  private readonly pendingMessagesMap = new Map<string, ChatMessage[]>();
+
+  readonly isTyping = computed(() => this.pendingConvSet().has(this.activeConversationId()));
   readonly hasMessages = computed(() => this.messages().length > 0);
 
-  /** Awaiting backend response flag */
-  readonly isAwaitingBackend = signal<boolean>(false);
+  /** Awaiting backend response flag per conversation */
+  readonly isAwaitingBackend = computed(() => this.pendingConvSet().has(this.activeConversationId()));
 
   constructor() {
     this.restoreFromStorage();
@@ -222,6 +231,13 @@ export class ChatService {
   // ─── Public API ───────────────────────────────────────────────────────────
 
   setView(view: DesktopViewMode): void {
+    if (view === 'chat') {
+      const pendingId = this.pendingConversationId();
+      if (pendingId && this.pendingConvSet().has(pendingId)) {
+        this.selectConversation(pendingId);
+        return;
+      }
+    }
     this.currentView.set(view);
   }
 
@@ -230,14 +246,22 @@ export class ChatService {
   }
 
   selectConversation(id: string): void {
+    const pendingMsgs = this.pendingMessagesMap.get(id);
+
+    if (pendingMsgs && this.pendingConvSet().has(id)) {
+      this.activeConversationId.set(id);
+      this.messages.set([...pendingMsgs]);
+      this.currentView.set('chat');
+      try { localStorage.setItem(this.activeKey, id); } catch { /* ignore */ }
+      return;
+    }
+
     const stored = this.loadStoredConversations();
     const target = stored.find((c) => c.id === id);
     if (!target) return;
 
     this.activeConversationId.set(target.id);
     this.messages.set(target.messages.map((m) => this.fromStoredMessage(m)));
-    this.isAwaitingBackend.set(false);
-    this.isTyping.set(false);
     this.currentView.set('chat');
 
     try { localStorage.setItem(this.activeKey, id); } catch { /* ignore */ }
@@ -246,8 +270,6 @@ export class ChatService {
   startNewConversation(initialText?: string): void {
     const newId = this.generateConversationId();
     this.messages.set([]);
-    this.isAwaitingBackend.set(false);
-    this.isTyping.set(false);
     this.activeConversationId.set(newId);
 
     try { localStorage.setItem(this.activeKey, newId); } catch { /* ignore */ }
@@ -266,6 +288,16 @@ export class ChatService {
   clearChat(): void {
     const convId = this.activeConversationId();
     if (convId) {
+      this.pendingMessagesMap.delete(convId);
+      this.pendingConvSet.update((set) => {
+        const next = new Set(set);
+        next.delete(convId);
+        return next;
+      });
+      if (this.pendingConversationId() === convId) {
+        this.pendingConversationId.set(null);
+      }
+
       const stored = this.loadStoredConversations();
       const idx = stored.findIndex((c) => c.id === convId);
       if (idx >= 0) {
@@ -280,12 +312,20 @@ export class ChatService {
     }
 
     this.messages.set([]);
-    this.isAwaitingBackend.set(false);
-    this.isTyping.set(false);
   }
 
   deleteConversation(id: string): void {
     if (!id) return;
+    this.pendingMessagesMap.delete(id);
+    this.pendingConvSet.update((set) => {
+      const next = new Set(set);
+      next.delete(id);
+      return next;
+    });
+    if (this.pendingConversationId() === id) {
+      this.pendingConversationId.set(null);
+    }
+
     const stored = this.loadStoredConversations();
     const cleaned = stored.filter((c) => c.id !== id);
     this.saveStoredConversations(cleaned);
@@ -324,12 +364,23 @@ export class ChatService {
     };
 
     // Append user message to active messages signal immediately
-    this.messages.update((msgs) => [...msgs, userMsg]);
+    const updatedActiveMsgs = [...this.messages(), userMsg];
+    this.messages.set(updatedActiveMsgs);
 
-    // Switch view to chat and show loading status immediately.
+    // Track pending conversation & messages
+    this.pendingConversationId.set(targetConvId);
+    this.pendingMessagesMap.set(targetConvId, updatedActiveMsgs);
+    this.pendingConvSet.update((set) => {
+      const next = new Set(set);
+      next.add(targetConvId);
+      return next;
+    });
+
+    // Save user message immediately to storage so history sidebar updates right away
+    this.saveUserMsgToTargetConv(targetConvId, userMsg);
+
+    // Switch view to chat
     this.currentView.set('chat');
-    this.isAwaitingBackend.set(true);
-    this.isTyping.set(true);
 
     try { localStorage.setItem(this.activeKey, targetConvId); } catch { /* ignore */ }
 
@@ -358,15 +409,24 @@ export class ChatService {
       // 1. Save userMsg and assistantMsg to target conversation entry in localStorage
       this.savePairToTargetConv(targetConvId, userMsg, assistantMsg);
 
-      // 2. Update active view if user is still viewing targetConvId
+      // 2. Clear pending state for targetConvId
+      this.pendingMessagesMap.delete(targetConvId);
+      this.pendingConvSet.update((set) => {
+        const next = new Set(set);
+        next.delete(targetConvId);
+        return next;
+      });
+      if (this.pendingConversationId() === targetConvId) {
+        this.pendingConversationId.set(null);
+      }
+
+      // 3. Update active view if user is still viewing targetConvId
       if (this.activeConversationId() === targetConvId) {
         this.messages.update((msgs) => {
           const hasUserMsg = msgs.some((m) => m.id === userMsg.id);
           const base = hasUserMsg ? msgs : [...msgs, userMsg];
           return [...base, assistantMsg];
         });
-        this.isAwaitingBackend.set(false);
-        this.isTyping.set(false);
       }
     };
 
@@ -384,14 +444,22 @@ export class ChatService {
 
       this.savePairToTargetConv(targetConvId, userMsg, errorMsg);
 
+      this.pendingMessagesMap.delete(targetConvId);
+      this.pendingConvSet.update((set) => {
+        const next = new Set(set);
+        next.delete(targetConvId);
+        return next;
+      });
+      if (this.pendingConversationId() === targetConvId) {
+        this.pendingConversationId.set(null);
+      }
+
       if (this.activeConversationId() === targetConvId) {
         this.messages.update((msgs) => {
           const hasUserMsg = msgs.some((m) => m.id === userMsg.id);
           const base = hasUserMsg ? msgs : [...msgs, userMsg];
           return [...base, errorMsg];
         });
-        this.isAwaitingBackend.set(false);
-        this.isTyping.set(false);
       }
     };
 
@@ -412,17 +480,57 @@ export class ChatService {
     });
   }
 
-  /** Helper to safely persist user and assistant messages to a target conversation entry in storage */
+  private saveUserMsgToTargetConv(targetConvId: string, userMsg: ChatMessage): void {
+    const stored = this.loadStoredConversations();
+    const idx = stored.findIndex((c) => c.id === targetConvId);
+    const now = new Date().toISOString();
+    const storedUser = this.toStoredMessage(userMsg);
+
+    if (idx >= 0) {
+      const existing = stored[idx].messages;
+      if (!existing.some((m) => m.id === userMsg.id)) {
+        stored[idx] = {
+          ...stored[idx],
+          messages: [...existing, storedUser],
+          updatedAt: now,
+        };
+      }
+    } else {
+      const title = userMsg.content.slice(0, 40) + (userMsg.content.length > 40 ? '…' : '');
+      stored.push({
+        id: targetConvId,
+        title,
+        messages: [storedUser],
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    stored.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    this.saveStoredConversations(stored);
+    this.conversations.set(stored.map((sc) => this.toConversation(sc)));
+  }
+
   private savePairToTargetConv(targetConvId: string, userMsg: ChatMessage, assistantMsg: ChatMessage): void {
     const stored = this.loadStoredConversations();
     const idx = stored.findIndex((c) => c.id === targetConvId);
     const now = new Date().toISOString();
 
-    const newStoredMsgs = [this.toStoredMessage(userMsg), this.toStoredMessage(assistantMsg)];
+    const storedUser = this.toStoredMessage(userMsg);
+    const storedAssistant = this.toStoredMessage(assistantMsg);
 
     if (idx >= 0) {
-      const existingMsgs = stored[idx].messages;
-      const firstUser = [...existingMsgs.map((m) => this.fromStoredMessage(m)), userMsg].find((m) => m.role === 'user');
+      const existingMsgs = [...stored[idx].messages];
+      const userIdx = existingMsgs.findIndex((m) => m.id === userMsg.id);
+      let updatedMsgs: StoredMessage[];
+      if (userIdx >= 0) {
+        existingMsgs[userIdx] = storedUser;
+        updatedMsgs = [...existingMsgs, storedAssistant];
+      } else {
+        updatedMsgs = [...existingMsgs, storedUser, storedAssistant];
+      }
+
+      const firstUser = updatedMsgs.find((m) => m.role === 'user');
       const title = firstUser
         ? (firstUser.deleted ? 'Protected Conversation' : (firstUser.content.slice(0, 40) + (firstUser.content.length > 40 ? '…' : '')))
         : 'New conversation';
@@ -430,7 +538,7 @@ export class ChatService {
       stored[idx] = {
         ...stored[idx],
         title,
-        messages: [...existingMsgs, ...newStoredMsgs],
+        messages: updatedMsgs,
         updatedAt: now,
       };
     } else {
@@ -441,7 +549,7 @@ export class ChatService {
       stored.push({
         id: targetConvId,
         title,
-        messages: newStoredMsgs,
+        messages: [storedUser, storedAssistant],
         createdAt: now,
         updatedAt: now,
       });

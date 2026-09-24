@@ -446,7 +446,8 @@ import { AnalyticalResponseComponent } from '../chat-message/analytical-response
 
     .assistant-agent-meta {
       display: inline-block;
-      font-size: 0.72rem;
+      font-size: 0.88rem;
+      font-weight: 500;
       color: var(--muted-text);
     }
 

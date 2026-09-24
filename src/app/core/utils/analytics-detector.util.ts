@@ -422,8 +422,32 @@ export function analyzeAnalyticalResponse(
     suitableViews.push('kpi-grid');
   }
 
-  // Is visualization useful?
-  const isVisualizationUseful = visualType !== 'none';
+  // Determine Visualization State Flags
+  const visualizationAvailable = visualType !== 'none';
+
+  // Explicit visualization request detection in original user prompt (requires explicit chart/graph/plot/visualize action word)
+  const hasExplicitVisualIntent = /\b(?:chart|graph|plot|visualize|visualization|bar\s*chart|line\s*chart|donut\s*chart|pie\s*chart|scatter\s*plot|histogram|waterfall\s*chart|draw|show\s*chart|make\s*chart)\b/i.test(cleanQ);
+
+  // Pure theoretical / definition question detection
+  const isTheoreticalQuery = /\b(?:what\s+is|explain|definition|define|meaning\s+of|how\s+does)\b/i.test(cleanQ) && !/\b(?:data|show|get|list|top|revenue|invoice|vendor|sales)\b/i.test(cleanQ);
+
+  let visualizationVisible = false;
+  let visualizationOffered = false;
+  let visualizationIntent = false;
+
+  if (visualizationAvailable && !isTheoreticalQuery) {
+    if (hasExplicitVisualIntent) {
+      visualizationVisible = true;
+      visualizationIntent = true;
+      visualizationOffered = false;
+    } else {
+      visualizationVisible = false;
+      visualizationIntent = false;
+      visualizationOffered = true;
+    }
+  }
+
+  const isVisualizationUseful = visualizationAvailable && visualizationVisible;
 
   return {
     visualType,
@@ -434,6 +458,11 @@ export function analyzeAnalyticalResponse(
     tableData: tableData || undefined,
     suitableViews: suitableViews.length > 0 ? suitableViews : [visualType],
     activeView: visualType,
-    isVisualizationUseful
+    isVisualizationUseful,
+    visualizationAvailable,
+    visualizationVisible,
+    visualizationIntent,
+    visualizationOffered,
+    visualizationRequested: hasExplicitVisualIntent
   };
 }

@@ -6,6 +6,7 @@ import { AnalyticalPresentation, VisualFormatType } from '../../../core/models/a
 import { TrendChartComponent } from './trend-chart.component';
 import { KpiMetricCardsComponent } from './kpi-metric-cards.component';
 import { DataTableViewComponent } from './data-table-view.component';
+import { ChatService } from '../../../core/services/chat.service';
 
 /**
  * Strips raw ASCII charts, code fences wrapping ASCII/HTML cards,
@@ -31,7 +32,12 @@ export function cleanDisplayContent(content: string, hasVisual: boolean = false)
   // 4. Remove any remaining raw ASCII bar lines
   cleaned = cleaned.replace(/^[\s*#-]*[A-Za-z0-9_\-./\s]{2,30}?\s+[█░▓▒■❚|=#-]{3,}[\s\S]*?$/gm, '');
 
-  // 5. Clean extra blank lines
+  // 5. Strip plain text visualization question prompts (rendered via interactive buttons instead)
+  cleaned = cleaned.replace(/would\s+you\s+like\s+.*(?:visualize|chart|graph|visual).*\?\s*\([^\)]*\)/gi, '');
+  cleaned = cleaned.replace(/would\s+you\s+like\s+a\s+chart[^\n]*/gi, '');
+  cleaned = cleaned.replace(/✓\s*Yes\s*×\s*No/gi, '');
+
+  // 6. Clean extra blank lines
   cleaned = cleaned.replace(/\n{3,}/g, '\n\n').trim();
   return cleaned;
 }
@@ -47,8 +53,38 @@ export function cleanDisplayContent(content: string, hasVisual: boolean = false)
   ],
   template: `
     <div class="analytical-response-container">
-      <!-- ── 1. Dynamic Visual Component Rendering (Hero Placement at Top) ── -->
-      @if (presentation().isVisualizationUseful) {
+      <!-- ── 1. Clean Text Narrative / Explanation / Business Insights ── -->
+      @if (displayContent()) {
+        <div
+          class="assistant-markdown-content"
+          [innerHTML]="markdownFormatter.formatMarkdown(displayContent())"
+        ></div>
+      }
+
+      <!-- ── 2. Opt-In Interactive Quick Action Bar (when visualization is offered & pending) ── -->
+      @if (presentation().visualizationOffered && optInChoice() === 'pending' && !isChartVisible()) {
+        <div class="visualization-opt-in-bar">
+          <span class="opt-in-prompt-text">Would you like to visualize this data as a chart?</span>
+          <div class="opt-in-buttons-group">
+            <button class="opt-in-btn yes-btn" (click)="confirmVisualization()">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2">
+                <path d="M5 13l4 4L19 7" />
+              </svg>
+              <span>Yes, show chart</span>
+            </button>
+            <button class="opt-in-btn no-btn" (click)="declineVisualization()">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+              <span>No</span>
+            </button>
+          </div>
+        </div>
+      }
+
+      <!-- ── 3. Dynamic Visual Component Rendering (Placed Below Text Narrative) ── -->
+      @if (isChartVisible()) {
         <div class="visual-presentation-wrapper">
           <!-- Visual View Selector Bar (when multiple suitable views exist) -->
           @if (presentation().suitableViews.length > 1) {
@@ -124,19 +160,83 @@ export function cleanDisplayContent(content: string, hasVisual: boolean = false)
           }
         </div>
       }
-
-      <!-- ── 2. Clean Text Narrative / Explanation / Business Insights ── -->
-      @if (displayContent()) {
-        <div
-          class="assistant-markdown-content"
-          [innerHTML]="markdownFormatter.formatMarkdown(displayContent())"
-        ></div>
-      }
     </div>
   `,
   styles: [`
     .analytical-response-container {
       width: 100%;
+    }
+
+    .visualization-opt-in-bar {
+      margin-top: 14px;
+      padding: 12px 16px;
+      background: var(--secondary-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-card, 8px);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      flex-wrap: wrap;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+    }
+
+    .opt-in-prompt-text {
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: var(--foreground);
+    }
+
+    .opt-in-buttons-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .opt-in-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 18px;
+      border-radius: 6px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+      outline: none;
+
+      &.yes-btn {
+        background: var(--primary-accent, #1e3a8a);
+        color: #ffffff;
+        border: 1px solid var(--primary-accent, #1e3a8a);
+        box-shadow: 0 2px 6px rgba(15, 23, 42, 0.2);
+
+        &:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 4px 10px rgba(15, 23, 42, 0.3);
+          filter: brightness(1.1);
+        }
+
+        &:active {
+          transform: translateY(0);
+        }
+      }
+
+      &.no-btn {
+        background: var(--card-surface, #ffffff);
+        color: var(--foreground, #1e293b);
+        border: 1px solid var(--border-color, #cbd5e1);
+
+        &:hover {
+          background: var(--secondary-surface, #f8fafc);
+          border-color: oklch(0.7 0.02 260);
+          color: var(--foreground, #0f172a);
+        }
+
+        &:active {
+          background: #e2e8f0;
+        }
+      }
     }
 
     .visual-view-selector-bar {
@@ -198,7 +298,7 @@ export function cleanDisplayContent(content: string, hasVisual: boolean = false)
     }
 
     .visual-presentation-wrapper {
-      margin-top: 10px;
+      margin-top: 16px;
       animation: fadeInUp 200ms ease;
     }
 
@@ -398,13 +498,22 @@ export class AnalyticalResponseComponent {
   readonly agent = input<string | undefined>(undefined);
 
   readonly markdownFormatter = inject(MarkdownFormatterService);
+  readonly chatService = inject(ChatService);
+
+  readonly isChartRevealed = signal<boolean>(false);
+  readonly optInChoice = signal<'pending' | 'yes' | 'no'>('pending');
 
   readonly presentation = computed<AnalyticalPresentation>(() => {
     return analyzeAnalyticalResponse(this.content(), this.userQuery());
   });
 
+  readonly isChartVisible = computed<boolean>(() => {
+    if (this.isChartRevealed()) return true;
+    return this.presentation().isVisualizationUseful ?? false;
+  });
+
   readonly displayContent = computed<string>(() => {
-    return cleanDisplayContent(this.content(), this.presentation().isVisualizationUseful);
+    return cleanDisplayContent(this.content(), this.isChartVisible());
   });
 
   private readonly selectedViewSignal = signal<VisualFormatType | null>(null);
@@ -417,6 +526,16 @@ export class AnalyticalResponseComponent {
 
   setView(v: VisualFormatType): void {
     this.selectedViewSignal.set(v);
+  }
+
+  confirmVisualization(): void {
+    this.optInChoice.set('yes');
+    this.isChartRevealed.set(true);
+  }
+
+  declineVisualization(): void {
+    this.optInChoice.set('no');
+    this.isChartRevealed.set(false);
   }
 
   isChartView(type: VisualFormatType): boolean {

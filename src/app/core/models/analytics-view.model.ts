@@ -64,4 +64,9 @@ export interface AnalyticalPresentation {
   suitableViews: VisualFormatType[];
   activeView: VisualFormatType;
   isVisualizationUseful: boolean;
+  visualizationAvailable?: boolean;
+  visualizationVisible?: boolean;
+  visualizationIntent?: boolean;
+  visualizationOffered?: boolean;
+  visualizationRequested?: boolean;
 }

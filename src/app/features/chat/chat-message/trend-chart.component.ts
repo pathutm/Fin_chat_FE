@@ -302,8 +302,8 @@ export interface ComparisonTableRow {
           </div>
         </div>
 
-        <!-- ── 5. SCENARIO-ADAPTIVE FILTERING BAR (Entity Filter or Date Range) ── -->
-        @if (isComparisonScenario()) {
+        <!-- ── 5. SEPARATE & INDEPENDENT FILTER BARS (Entity Filter + Date Range Slider) ── -->
+        @if (isComparisonScenario() || allEntities().length >= 2) {
           <div class="entity-filter-bar">
             <div class="entity-filter-header">
               <span class="entity-filter-label">Filter {{ dimensionLabel() }}:</span>
@@ -332,182 +332,84 @@ export interface ComparisonTableRow {
               }
             </div>
           </div>
-        } @else {
-          <!-- ── 5. PERMANENT DATE RANGE FILTERING BAR (For Chronological Time Series) ── -->
-          <div class="filters-bar">
-          <!-- Quick Presets -->
-          <div class="filter-item presets-group">
-            <span class="filter-label">Quick:</span>
-            <button
-              class="preset-pill-btn"
-              [class.active]="activePreset() === 'all'"
-              (click)="setPreset('all')"
-              title="View all available data ({{ trendData().points[0].shortMonth }} – {{ trendData().points[trendData().points.length - 1].shortMonth }})"
-            >
-              All Data ({{ trendData().points.length }}M)
-            </button>
-            @if (trendData().points.length > 12) {
-              <button
-                class="preset-pill-btn"
-                [class.active]="activePreset() === 'latest12'"
-                (click)="setPreset('latest12')"
-                title="View latest 12 months"
-              >
-                Latest 12M
-              </button>
-            }
-            @if (trendData().points.length > 24) {
-              <button
-                class="preset-pill-btn"
-                [class.active]="activePreset() === 'latest24'"
-                (click)="setPreset('latest24')"
-                title="View latest 24 months"
-              >
-                Latest 24M
-              </button>
-            }
-            @if (latestYear()) {
-              <button
-                class="preset-pill-btn"
-                [class.active]="activePreset() === 'currentYear'"
-                (click)="setPreset('currentYear')"
-                title="View current data year ({{ latestYear() }})"
-              >
-                {{ latestYear() }}
-              </button>
-            }
-            @if (previousYear()) {
-              <button
-                class="preset-pill-btn"
-                [class.active]="activePreset() === 'prevYear'"
-                (click)="setPreset('prevYear')"
-                title="View previous data year ({{ previousYear() }})"
-              >
-                {{ previousYear() }}
-              </button>
-            }
-          </div>
+        }
 
-          <div class="filter-divider"></div>
-
-          <!-- Interactive Calendar / Month Picker: From Date -->
-          <div class="filter-item date-picker-item">
-            <span class="filter-label">From:</span>
-            <div class="picker-trigger-wrap">
+        @if (hasChronologyPoints()) {
+          <div class="filters-bar date-filters-bar">
+            <!-- Quick Presets -->
+            <div class="filter-item presets-group">
+              <span class="filter-label">Quick:</span>
               <button
-                class="picker-trigger-btn"
-                [class.active]="isFromPickerOpen()"
-                (click)="toggleFromPicker($event)"
-                title="Click to open From Month calendar picker"
-                aria-label="Select start date"
+                class="preset-pill-btn"
+                [class.active]="activePreset() === 'all'"
+                (click)="setPreset('all')"
+                title="View all available data"
               >
-                <svg class="picker-icon" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
-                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                  <line x1="16" y1="2" x2="16" y2="6"></line>
-                  <line x1="8" y1="2" x2="8" y2="6"></line>
-                  <line x1="3" y1="10" x2="21" y2="10"></line>
-                </svg>
-                <span class="picker-value">{{ selectedFromPoint()?.month || 'Select date' }}</span>
-                <svg class="picker-chevron" viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.2">
-                  <polyline points="6 9 12 15 18 9"></polyline>
-                </svg>
+                All Data
               </button>
-
-              @if (isFromPickerOpen()) {
-                <div class="calendar-popover" (click)="$event.stopPropagation()">
-                  <div class="popover-header">
-                    <span class="popover-title">Select Start Month</span>
-                    <span class="popover-bounds">Bounds: {{ trendData().points[0].shortMonth }} – {{ trendData().points[trendData().points.length - 1].shortMonth }}</span>
-                  </div>
-                  <div class="calendar-years-grid">
-                    @for (yr of availableYears(); track yr) {
-                      <div class="year-block">
-                        <span class="year-title">{{ yr }}</span>
-                        <div class="months-chips-grid">
-                          @for (m of getMonthsForYear(yr); track m.monthIndex) {
-                            <button
-                              class="month-chip-btn"
-                              [class.active]="selectedFromPoint()?.sortKey === m.sortKey"
-                              [disabled]="!m.isAvailable"
-                              (click)="selectFromMonth(m.pointIndex)"
-                              [title]="m.isAvailable ? m.month : 'No data recorded for this month'"
-                            >
-                              {{ m.shortMonth.slice(0, 3) }}
-                            </button>
-                          }
-                        </div>
-                      </div>
-                    }
-                  </div>
-                </div>
+              @if (trendData().points.length > 12) {
+                <button
+                  class="preset-pill-btn"
+                  [class.active]="activePreset() === 'latest12'"
+                  (click)="setPreset('latest12')"
+                  title="View latest 12 months"
+                >
+                  Latest 12
+                </button>
+              }
+              @if (trendData().points.length > 24) {
+                <button
+                  class="preset-pill-btn"
+                  [class.active]="activePreset() === 'latest24'"
+                  (click)="setPreset('latest24')"
+                  title="View latest 24 months"
+                >
+                  Latest 24
+                </button>
               }
             </div>
-          </div>
 
-          <!-- Interactive Calendar / Month Picker: To Date -->
-          <div class="filter-item date-picker-item">
-            <span class="filter-label">To:</span>
-            <div class="picker-trigger-wrap">
-              <button
-                class="picker-trigger-btn"
-                [class.active]="isToPickerOpen()"
-                (click)="toggleToPicker($event)"
-                title="Click to open To Month calendar picker"
-                aria-label="Select end date"
-              >
-                <svg class="picker-icon" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
-                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                  <line x1="16" y1="2" x2="16" y2="6"></line>
-                  <line x1="8" y1="2" x2="8" y2="6"></line>
-                  <line x1="3" y1="10" x2="21" y2="10"></line>
-                </svg>
-                <span class="picker-value">{{ selectedToPoint()?.month || 'Select date' }}</span>
-                <svg class="picker-chevron" viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.2">
-                  <polyline points="6 9 12 15 18 9"></polyline>
-                </svg>
-              </button>
+            <div class="filter-divider"></div>
 
-              @if (isToPickerOpen()) {
-                <div class="calendar-popover" (click)="$event.stopPropagation()">
-                  <div class="popover-header">
-                    <span class="popover-title">Select End Month</span>
-                    <span class="popover-bounds">Available up to {{ trendData().points[trendData().points.length - 1].shortMonth }}</span>
-                  </div>
-                  <div class="calendar-years-grid">
-                    @for (yr of availableYears(); track yr) {
-                      <div class="year-block">
-                        <span class="year-title">{{ yr }}</span>
-                        <div class="months-chips-grid">
-                          @for (m of getMonthsForYear(yr); track m.monthIndex) {
-                            <button
-                              class="month-chip-btn"
-                              [class.active]="selectedToPoint()?.sortKey === m.sortKey"
-                              [disabled]="!m.isAvailable || (selectedFromPoint() && m.sortKey < selectedFromPoint()!.sortKey)"
-                              (click)="selectToMonth(m.pointIndex)"
-                              [title]="m.isAvailable ? m.month : 'Not available or earlier than From date'"
-                            >
-                              {{ m.shortMonth.slice(0, 3) }}
-                            </button>
-                          }
-                        </div>
-                      </div>
-                    }
-                  </div>
-                </div>
-              }
+            <!-- Start/End Date Range Slider for Custom Ranges -->
+            <div class="filter-item date-slider-item">
+              <div class="slider-labels-row">
+                <span class="slider-date-badge start">Start: {{ selectedFromPoint()?.shortMonth || selectedFromPoint()?.month }}</span>
+                <span class="slider-range-connector">────────</span>
+                <span class="slider-date-badge end">End: {{ selectedToPoint()?.shortMonth || selectedToPoint()?.month }}</span>
+              </div>
+              <div class="range-sliders-wrap">
+                <input
+                  type="range"
+                  class="date-range-slider start-slider"
+                  min="0"
+                  [max]="trendData().points.length - 1"
+                  [value]="fromSliderIndex()"
+                  (input)="onFromSliderChange($event)"
+                  title="Adjust Start Month"
+                />
+                <input
+                  type="range"
+                  class="date-range-slider end-slider"
+                  min="0"
+                  [max]="trendData().points.length - 1"
+                  [value]="toSliderIndex()"
+                  (input)="onToSliderChange($event)"
+                  title="Adjust End Month"
+                />
+              </div>
             </div>
-          </div>
 
-          <!-- Reset Filter Button -->
-          @if (isRangeCustomized()) {
-            <button class="reset-range-btn" (click)="setPreset('all')" title="Reset to entire available range">
-              <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
-                <path d="M3 3v5h5"/>
-              </svg>
-              <span>Reset Range</span>
-            </button>
-          }
+            <!-- Reset Filter Button -->
+            @if (isRangeCustomized()) {
+              <button class="reset-range-btn" (click)="setPreset('all')" title="Reset to entire available range">
+                <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                  <path d="M3 3v5h5"/>
+                </svg>
+                <span>Reset Range</span>
+              </button>
+            }
           </div>
         }
 
@@ -1217,72 +1119,74 @@ export interface ComparisonTableRow {
           }
         </div>
 
-        <!-- ── 6b. ADAPTIVE SIDE-BY-SIDE COMPARISON ANALYSIS TABLE ── -->
-        @if (comparisonTableRows().length >= 2) {
+        <!-- ── 6b. ADAPTIVE VISUALIZATION DATA OVERVIEW CARD ── -->
+        @if (activePoints().length > 0) {
           <div class="comparison-analysis-card">
             <div class="comparison-card-header">
               <div class="comp-title-group">
                 <div class="comp-icon-box">
                   <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2">
-                    <path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/>
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                    <line x1="16" y1="17" x2="8" y2="17"></line>
                   </svg>
                 </div>
                 <div>
-                  <h5 class="comp-title">{{ dimensionLabel() }} Comparison Analysis</h5>
-                  @if (headToHeadSummary()) {
-                    <p class="head-to-head-callout">{{ headToHeadSummary() }}</p>
+                  <h5 class="comp-title">{{ visualizationOverview().title }}</h5>
+                  @if (visualizationOverview().subtitle) {
+                    <p class="head-to-head-callout">{{ visualizationOverview().subtitle }}</p>
                   }
                 </div>
               </div>
-              <span class="comp-count-pill">{{ comparisonTableRows().length }} {{ dimensionLabel() }}s Compared</span>
+              <span class="comp-count-pill">{{ visualizationOverview().pillCountLabel }}</span>
             </div>
 
             <div class="comp-table-container">
-              <table class="comp-table">
-                <thead>
-                  <tr>
-                    <th>{{ dimensionLabel() }}</th>
-                    <th class="text-right">{{ trendData().metricLabel || 'Value' }}</th>
-                    <th class="text-right">Share of Total</th>
-                    <th class="text-right">Variance vs Leader</th>
-                    <th class="text-center">Evaluation</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (row of comparisonTableRows(); track row.entityName) {
-                    <tr [class.leader-row]="row.isLeader">
-                      <td class="comp-entity-col">
-                        <span class="comp-color-dot" [style.background-color]="row.color"></span>
-                        <span class="comp-entity-name">{{ row.entityName }}</span>
-                        @if (row.isLeader) {
-                          <span class="comp-leader-badge">Top Performer</span>
-                        }
-                      </td>
-                      <td class="text-right font-mono font-bold">{{ row.rawAmount }}</td>
-                      <td class="text-right">
-                        <div class="comp-share-cell">
-                          <div class="comp-share-bar" [style.width.%]="row.sharePct" [style.background-color]="row.color"></div>
-                          <span class="font-mono text-xs">{{ row.sharePct }}%</span>
-                        </div>
-                      </td>
-                      <td class="text-right font-mono text-xs">
-                        @if (row.isLeader) {
-                          <span class="comp-baseline-tag">Baseline</span>
-                        } @else {
-                          <span class="comp-delta-val" [class.negative]="row.diffFromLeader < 0" [class.positive]="row.diffFromLeader > 0">
-                            {{ row.diffFormatted }} ({{ row.diffPercentFormatted }})
-                          </span>
-                        }
-                      </td>
-                      <td class="text-center">
-                        <span class="comp-eval-chip" [class.best]="row.isLeader" [class.warn]="row.evaluation === 'Lagging'">
-                          {{ row.evaluation }}
-                        </span>
-                      </td>
-                    </tr>
+              @if (visualizationOverview().bullets.length > 0) {
+                <div class="overview-bullets-list">
+                  @for (bullet of visualizationOverview().bullets; track $index) {
+                    <div class="overview-bullet-item">
+                      <span class="bullet-dot"></span>
+                      <span class="bullet-text">{{ bullet }}</span>
+                    </div>
                   }
-                </tbody>
-              </table>
+                </div>
+              }
+
+              @if (visualizationOverview().seriesOverviews.length > 0) {
+                <table class="comp-table">
+                  <thead>
+                    <tr>
+                      <th>Metric / Series</th>
+                      <th>Coverage Period</th>
+                      <th class="text-right">Total</th>
+                      <th class="text-right">Peak Value</th>
+                      <th class="text-right">Lowest Value</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (s of visualizationOverview().seriesOverviews; track s.name) {
+                      <tr>
+                        <td class="comp-entity-col">
+                          <span class="comp-color-dot" [style.background-color]="s.color"></span>
+                          <span class="comp-entity-name">{{ s.name }}</span>
+                        </td>
+                        <td class="font-mono text-xs">{{ s.firstPoint.period }} – {{ s.lastPoint.period }}</td>
+                        <td class="text-right font-mono font-bold">{{ s.totalFormatted }}</td>
+                        <td class="text-right font-mono text-xs">
+                          <span class="font-bold">{{ s.peakPoint.amountFormatted }}</span>
+                          <span class="text-muted text-[10px] block">({{ s.peakPoint.period }})</span>
+                        </td>
+                        <td class="text-right font-mono text-xs">
+                          <span class="font-bold">{{ s.lowestPoint.amountFormatted }}</span>
+                          <span class="text-muted text-[10px] block">({{ s.lowestPoint.period }})</span>
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              }
             </div>
           </div>
         }
@@ -2007,10 +1911,50 @@ export interface ComparisonTableRow {
       flex-direction: column;
       gap: 8px;
       padding: 9px 12px;
-      margin: 10px 0 12px;
+      margin: 10px 0 8px;
       background: var(--secondary-surface);
       border: 1px solid var(--border-color);
       border-radius: var(--radius-card);
+    }
+    .date-slider-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex: 1;
+      min-width: 220px;
+    }
+    .slider-labels-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+    }
+    .slider-date-badge {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--primary-accent);
+      background: var(--card-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-pill);
+      padding: 1px 7px;
+    }
+    .slider-range-connector {
+      color: var(--muted-text);
+      font-size: 0.65rem;
+      opacity: 0.6;
+    }
+    .range-sliders-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .date-range-slider {
+      flex: 1;
+      accent-color: var(--primary-accent);
+      cursor: pointer;
+      height: 4px;
+      border-radius: 2px;
     }
     .entity-filter-header {
       display: flex;
@@ -2219,6 +2163,35 @@ export interface ComparisonTableRow {
       color: var(--muted-text);
       &.best { background: #dcfce7; color: #15803d; }
       &.warn { background: #fee2e2; color: #b91c1c; }
+    }
+    .overview-bullets-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 10px 14px;
+      background: var(--secondary-surface);
+      border-radius: var(--radius-base);
+      border: 1px solid var(--border-color);
+      margin-bottom: 12px;
+    }
+    .overview-bullet-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      font-size: 0.78rem;
+      line-height: 1.45;
+      color: var(--foreground);
+    }
+    .bullet-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--primary-accent);
+      margin-top: 5px;
+      flex-shrink: 0;
+    }
+    .bullet-text {
+      font-weight: 500;
     }
 
     @keyframes fadeIn {
@@ -2511,35 +2484,275 @@ export class TrendChartComponent {
     }
   }
 
-  // ─── Active Filtered Dataset (True inclusive date range filtering) ──────────
+  readonly hasChronologyPoints = computed<boolean>(() => {
+    const pts = this.trendData().points || [];
+    return pts.length >= 2 && pts.some(p => p.sortKey > 0);
+  });
+
+  onFromSliderChange(event: Event): void {
+    const val = parseInt((event.target as HTMLInputElement).value, 10);
+    const all = this.trendData().points;
+    if (isNaN(val) || val < 0 || val >= all.length) return;
+
+    this.selectedFromIdx.set(all[val].pointIndex);
+    this.activePreset.set('custom');
+
+    const toPt = all.find(p => p.pointIndex === this.selectedToIdx());
+    if (toPt && all[val].sortKey > toPt.sortKey) {
+      this.selectedToIdx.set(all[val].pointIndex);
+    }
+  }
+
+  onToSliderChange(event: Event): void {
+    const val = parseInt((event.target as HTMLInputElement).value, 10);
+    const all = this.trendData().points;
+    if (isNaN(val) || val < 0 || val >= all.length) return;
+
+    this.selectedToIdx.set(all[val].pointIndex);
+    this.activePreset.set('custom');
+
+    const fromPt = all.find(p => p.pointIndex === this.selectedFromIdx());
+    if (fromPt && fromPt.sortKey > all[val].sortKey) {
+      this.selectedFromIdx.set(all[val].pointIndex);
+    }
+  }
+
+  readonly fromSliderIndex = computed<number>(() => {
+    const all = this.trendData().points;
+    const fromIdx = this.selectedFromIdx();
+    const idx = all.findIndex(p => p.pointIndex === fromIdx);
+    return idx >= 0 ? idx : 0;
+  });
+
+  readonly toSliderIndex = computed<number>(() => {
+    const all = this.trendData().points;
+    const toIdx = this.selectedToIdx();
+    const idx = all.findIndex(p => p.pointIndex === toIdx);
+    return idx >= 0 ? idx : all.length - 1;
+  });
+
+  // ─── Active Filtered Dataset (Entity + Date Range combined filtering) ──────────
 
   readonly activePoints = computed<TrendDataPoint[]>(() => {
-    const all = this.trendData().points;
-    if (!all || all.length === 0) return [];
+    let pts = this.trendData().points || [];
+    if (!pts || pts.length === 0) return [];
 
-    if (this.isComparisonScenario()) {
-      const selected = this.selectedEntityIds();
-      if (selected.length > 0) {
-        return all.filter(p => selected.includes(p.month));
-      }
-      return all;
+    // 1. Apply Entity Filter if entity pills are active
+    const selectedEntities = this.selectedEntityIds();
+    if (selectedEntities.length > 0 && selectedEntities.length < this.allEntities().length) {
+      pts = pts.filter(p => selectedEntities.includes(p.month));
     }
 
-    const fromIdx = this.selectedFromIdx();
-    const toIdx = this.selectedToIdx();
+    // 2. Apply Date Range Filter if valid chronological points exist
+    const hasDates = pts.some(p => p.sortKey > 0);
+    if (hasDates) {
+      const fromIdx = this.selectedFromIdx();
+      const toIdx = this.selectedToIdx();
+      const all = this.trendData().points;
 
-    if (fromIdx < 0 || toIdx < 0) return all;
+      if (fromIdx >= 0 && toIdx >= 0) {
+        const fromPt = all.find(p => p.pointIndex === fromIdx);
+        const toPt = all.find(p => p.pointIndex === toIdx);
 
-    const fromPt = all.find(p => p.pointIndex === fromIdx);
-    const toPt = all.find(p => p.pointIndex === toIdx);
+        if (fromPt && toPt) {
+          const minKey = Math.min(fromPt.sortKey, toPt.sortKey);
+          const maxKey = Math.max(fromPt.sortKey, toPt.sortKey);
+          pts = pts.filter(p => p.sortKey >= minKey && p.sortKey <= maxKey);
+        }
+      }
+    }
 
-    if (!fromPt || !toPt) return all;
+    return [...pts].sort((a, b) => (a.sortKey || 0) - (b.sortKey || 0));
+  });
 
-    const minKey = Math.min(fromPt.sortKey, toPt.sortKey);
-    const maxKey = Math.max(fromPt.sortKey, toPt.sortKey);
+  readonly visualizationOverview = computed(() => {
+    const pts = this.activePoints();
+    const type = this.selectedType();
+    const seriesList = this.activeSeriesList();
+    const isMulti = this.isMultiSeries() && seriesList.length >= 2;
+    const currency = this.trendData().currencySymbol || '$';
+    const dim = this.dimensionLabel();
 
-    const filtered = all.filter(p => p.sortKey >= minKey && p.sortKey <= maxKey);
-    return filtered.sort((a, b) => a.sortKey - b.sortKey);
+    if (!pts || pts.length === 0) {
+      return {
+        title: 'Data & Visualization Overview',
+        subtitle: 'No records matching current filter.',
+        pillCountLabel: '0 Records',
+        bullets: [],
+        seriesOverviews: []
+      };
+    }
+
+    const firstPt = pts[0];
+    const lastPt = pts[pts.length - 1];
+    const isTime = pts.some(p => p.sortKey > 0);
+    const dateRangeStr = isTime && pts.length >= 2
+      ? `${firstPt.month} – ${lastPt.month}`
+      : `${pts.length} ${dim}s`;
+
+    const pillCountLabel = isTime
+      ? `${pts.length} Monthly Periods`
+      : `${pts.length} ${dim}s Plotted`;
+
+    let title = 'Data & Visualization Overview';
+    let subtitle = `Coverage: ${dateRangeStr} (${pts.length} periods)`;
+    const bullets: string[] = [];
+
+    const fmt = (val: number) => {
+      if (Math.abs(val) >= 1e9) return `${currency}${(val / 1e9).toFixed(2)}B`;
+      if (Math.abs(val) >= 1e6) return `${currency}${(val / 1e6).toFixed(2)}M`;
+      if (Math.abs(val) >= 1e3) return `${currency}${(val / 1e3).toFixed(2)}K`;
+      return `${currency}${val.toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
+    };
+
+    const seriesOverviews: Array<{
+      name: string;
+      color: string;
+      totalFormatted: string;
+      firstPoint: { period: string; amountFormatted: string };
+      lastPoint: { period: string; amountFormatted: string };
+      peakPoint: { period: string; amountFormatted: string };
+      lowestPoint: { period: string; amountFormatted: string };
+      trendSummary: string;
+    }> = [];
+
+    if (isMulti) {
+      seriesList.forEach((s) => {
+        const sPts = s.points.filter(p => pts.some(ap => ap.month === p.month));
+        const activePtsForS = sPts.length > 0 ? sPts : pts;
+        const total = activePtsForS.reduce((acc, p) => acc + (p.amount || 0), 0);
+
+        let peak = activePtsForS[0];
+        let lowest = activePtsForS[0];
+        activePtsForS.forEach(p => {
+          if (p.amount > (peak?.amount ?? -Infinity)) peak = p;
+          if (p.amount < (lowest?.amount ?? Infinity)) lowest = p;
+        });
+
+        const sFirst = activePtsForS[0];
+        const sLast = activePtsForS[activePtsForS.length - 1];
+
+        seriesOverviews.push({
+          name: s.name,
+          color: s.color,
+          totalFormatted: fmt(total),
+          firstPoint: { period: sFirst?.month || '', amountFormatted: fmt(sFirst?.amount || 0) },
+          lastPoint: { period: sLast?.month || '', amountFormatted: fmt(sLast?.amount || 0) },
+          peakPoint: { period: peak?.month || '', amountFormatted: fmt(peak?.amount || 0) },
+          lowestPoint: { period: lowest?.month || '', amountFormatted: fmt(lowest?.amount || 0) },
+          trendSummary: `${s.name}: Total ${fmt(total)} across ${activePtsForS.length} periods (Started: ${fmt(sFirst?.amount || 0)} in ${sFirst?.month} → Peak: ${fmt(peak?.amount || 0)} in ${peak?.month} → Ended: ${fmt(sLast?.amount || 0)} in ${sLast?.month}).`
+        });
+      });
+    } else {
+      const primaryMetricLabel = this.trendData().metricLabel || 'Total Amount';
+      const total = pts.reduce((acc, p) => acc + p.amount, 0);
+      let peak = pts[0];
+      let lowest = pts[0];
+      pts.forEach(p => {
+        if (p.amount > peak.amount) peak = p;
+        if (p.amount < lowest.amount) lowest = p;
+      });
+
+      seriesOverviews.push({
+        name: primaryMetricLabel,
+        color: EXECUTIVE_PALETTE[0],
+        totalFormatted: fmt(total),
+        firstPoint: { period: firstPt.month, amountFormatted: fmt(firstPt.amount) },
+        lastPoint: { period: lastPt.month, amountFormatted: fmt(lastPt.amount) },
+        peakPoint: { period: peak.month, amountFormatted: fmt(peak.amount) },
+        lowestPoint: { period: lowest.month, amountFormatted: fmt(lowest.amount) },
+        trendSummary: `${primaryMetricLabel}: Total ${fmt(total)} across ${pts.length} periods (Started: ${fmt(firstPt.amount)} in ${firstPt.month} → Peak: ${fmt(peak.amount)} in ${peak.month} → Ended: ${fmt(lastPt.amount)} in ${lastPt.month}).`
+      });
+
+      if (this.trendData().hasInvoiceCount) {
+        const secondaryMetricLabel = this.trendData().secondaryMetricLabel || 'Volume';
+        const secTotal = pts.reduce((acc, p) => acc + (p.invoiceCountNum || 0), 0);
+        let secPeak = pts[0];
+        let secLowest = pts[0];
+        pts.forEach(p => {
+          if ((p.invoiceCountNum || 0) > (secPeak.invoiceCountNum || 0)) secPeak = p;
+          if ((p.invoiceCountNum || 0) < (secLowest.invoiceCountNum || 0)) secLowest = p;
+        });
+
+        seriesOverviews.push({
+          name: secondaryMetricLabel,
+          color: EXECUTIVE_PALETTE[1],
+          totalFormatted: secTotal.toLocaleString('en-US'),
+          firstPoint: { period: firstPt.month, amountFormatted: (firstPt.invoiceCountNum || 0).toLocaleString() },
+          lastPoint: { period: lastPt.month, amountFormatted: (lastPt.invoiceCountNum || 0).toLocaleString() },
+          peakPoint: { period: secPeak.month, amountFormatted: (secPeak.invoiceCountNum || 0).toLocaleString() },
+          lowestPoint: { period: secLowest.month, amountFormatted: (secLowest.invoiceCountNum || 0).toLocaleString() },
+          trendSummary: `${secondaryMetricLabel}: Total ${secTotal.toLocaleString()} across ${pts.length} periods (Peak: ${secPeak.month} at ${(secPeak.invoiceCountNum || 0).toLocaleString()}).`
+        });
+      }
+    }
+
+    if (type === 'line' || type === 'multi-line' || type === 'area') {
+      title = isMulti ? 'Multi-Metric Time-Series Trend Overview' : 'Time-Series Trajectory Overview';
+      subtitle = `Covering ${pts.length} monthly periods from ${firstPt.month} to ${lastPt.month}`;
+
+      bullets.push(`Date Range Covered: ${firstPt.month} to ${lastPt.month} (${pts.length} monthly periods).`);
+      seriesOverviews.forEach(s => {
+        bullets.push(s.trendSummary);
+      });
+    } else if (type === 'bar' || type === 'grouped-bar' || type === 'stacked-bar') {
+      title = isMulti ? 'Multi-Metric Comparative Overview' : 'Category / Period Overview';
+      subtitle = `Displaying ${pts.length} ${dim.toLowerCase()} periods`;
+
+      bullets.push(`Periods Plotted: ${pts.length} ${dim.toLowerCase()} periods displayed on bar visualization.`);
+      seriesOverviews.forEach(s => {
+        bullets.push(`${s.name}: Total ${s.totalFormatted} (Highest: ${s.peakPoint.period} with ${s.peakPoint.amountFormatted}, Lowest: ${s.lowestPoint.period} with ${s.lowestPoint.amountFormatted}).`);
+      });
+    } else if (type === 'histogram') {
+      title = 'Amount Distribution Overview';
+      const amounts = pts.map(p => p.amount);
+      const minVal = Math.min(...amounts);
+      const maxVal = Math.max(...amounts);
+      const bins = calculateHistogramBins(pts, currency);
+
+      subtitle = `${pts.length} records analyzed across ${bins.length} value brackets (${fmt(minVal)} to ${fmt(maxVal)})`;
+      bullets.push(`Record Scope & Range: Analyzed ${pts.length} records ranging from ${fmt(minVal)} to ${fmt(maxVal)}.`);
+
+      const maxBin = bins.reduce((prev, current) => (current.count > prev.count) ? current : prev, bins[0]);
+      if (maxBin) {
+        bullets.push(`Concentration Pattern: Highest density bracket is ${maxBin.label} containing ${maxBin.count} records (${maxBin.percent}% of total dataset).`);
+      }
+    } else if (type === 'donut') {
+      title = 'Category Share Breakdown Overview';
+      const slices = calculateDonutSlices(pts, 140, 135, 95, 55);
+      const totalVal = pts.reduce((acc, p) => acc + p.amount, 0);
+
+      subtitle = `Total volume of ${fmt(totalVal)} distributed across ${pts.length} ${dim.toLowerCase()} periods`;
+      bullets.push(`Total Volume: ${fmt(totalVal)} distributed across ${pts.length} categories.`);
+      if (slices.length > 0) {
+        bullets.push(`Largest Share: ${slices[0].label} represents ${fmt(slices[0].amount)} (${slices[0].percentage}% of total).`);
+      }
+    } else if (type === 'scatter') {
+      title = 'Metric Correlation Overview';
+      subtitle = `Correlation analysis across ${pts.length} data points`;
+      const primaryLbl = this.trendData().metricLabel || 'Amount';
+      const secLbl = this.trendData().secondaryMetricLabel || 'Volume';
+
+      bullets.push(`Plotted Metrics: Comparing ${primaryLbl} against ${secLbl} across ${pts.length} data points.`);
+      seriesOverviews.forEach(s => {
+        bullets.push(`${s.name} Range: ${s.lowestPoint.amountFormatted} (min) to ${s.peakPoint.amountFormatted} (max).`);
+      });
+    } else if (type === 'waterfall') {
+      title = 'Net Variance Walk Overview';
+      subtitle = `Step-by-step period variance from ${firstPt.month} to ${lastPt.month}`;
+      const totalVal = pts.reduce((acc, p) => acc + p.amount, 0);
+
+      bullets.push(`Variance Span: Initial period ${firstPt.month} (${fmt(firstPt.amount)}) to final period ${lastPt.month} (${fmt(lastPt.amount)}).`);
+      bullets.push(`Total Volume: Cumulative net amount of ${fmt(totalVal)} across all ${pts.length} steps.`);
+    }
+
+    return {
+      title,
+      subtitle,
+      pillCountLabel,
+      bullets,
+      seriesOverviews
+    };
   });
 
   readonly comparisonTableRows = computed<ComparisonTableRow[]>(() => {
