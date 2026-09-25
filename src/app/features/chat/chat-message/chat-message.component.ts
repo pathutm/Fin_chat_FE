@@ -72,11 +72,22 @@ import { AnalyticalResponseComponent } from './analytical-response.component';
     </div>
   `,
   styles: [`
+    :host {
+      display: block;
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+      box-sizing: border-box;
+    }
+
     .message-row {
       display: flex;
       align-items: flex-start;
       gap: 12px;
+      width: 100%;
       max-width: 100%;
+      min-width: 0;
+      box-sizing: border-box;
       animation: fadeInUp 250ms ease;
 
       &.user {
@@ -109,6 +120,9 @@ import { AnalyticalResponseComponent } from './analytical-response.component';
         background: transparent;
         border: none;
         width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        box-sizing: border-box;
       }
 
       &.typing {
@@ -133,6 +147,10 @@ import { AnalyticalResponseComponent } from './analytical-response.component';
       padding: 16px 20px;
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
       width: 100%;
+      max-width: 100%;
+      min-width: 0;
+      box-sizing: border-box;
+      overflow: hidden;
     }
 
     .assistant-card-header {

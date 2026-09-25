@@ -149,9 +149,24 @@ input, textarea {
   font-variant-numeric: tabular-nums;
 }
 
-/* ── Financial Tables Presentation ── */
+/* ── Markdown Table Wrapper for Clean In-Card Horizontal Scroll ── */
+.markdown-table-wrapper {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 12px 0;
+  box-sizing: border-box;
+  -webkit-overflow-scrolling: touch;
+
+  table {
+    width: 100%;
+    margin: 0;
+  }
+}
+
 .table-container {
   width: 100%;
+  max-width: 100%;
   overflow-x: auto;
   margin: 12px 0;
   border: 1px solid var(--border-color);
@@ -161,6 +176,7 @@ input, textarea {
 
 table {
   width: 100%;
+  max-width: 100%;
   border-collapse: collapse;
   text-align: left;
   font-size: 0.875rem;

@@ -15,8 +15,11 @@ marked.setOptions({
 export function parseMarkdownToHtml(content: string): string {
   if (!content) return '';
   try {
-    const html = marked.parse(content);
-    return typeof html === 'string' ? html : content;
+    const rawHtml = marked.parse(content);
+    const html = typeof rawHtml === 'string' ? rawHtml : content;
+    return html
+      .replace(/<table(\s|>)/g, '<div class="markdown-table-wrapper"><table$1')
+      .replace(/<\/table>/g, '</table></div>');
   } catch (e) {
     console.error('Markdown parsing error:', e);
     return content;

@@ -378,6 +378,11 @@ import { AnalyticalResponseComponent } from '../chat-message/analytical-response
       border-radius: var(--radius-card);
       padding: 16px 20px;
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+      box-sizing: border-box;
+      overflow: hidden;
     }
 
     .assistant-card-header {
@@ -456,6 +461,10 @@ import { AnalyticalResponseComponent } from '../chat-message/analytical-response
       color: var(--foreground);
       font-size: 0.92rem;
       line-height: 1.6;
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+      box-sizing: border-box;
 
       p {
         margin: 0 0 10px 0;
@@ -535,10 +544,11 @@ import { AnalyticalResponseComponent } from '../chat-message/analytical-response
       }
 
       /* Clean Financial Tables */
+      .markdown-table-wrapper table,
       table {
         width: 100%;
         border-collapse: collapse;
-        margin: 12px 0;
+        margin: 0;
         border: 1px solid var(--border-color);
         border-radius: var(--radius-base);
         font-size: 0.86rem;

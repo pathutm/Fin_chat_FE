@@ -163,8 +163,19 @@ export function cleanDisplayContent(content: string, hasVisual: boolean = false)
     </div>
   `,
   styles: [`
+    :host {
+      display: block;
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+      box-sizing: border-box;
+    }
+
     .analytical-response-container {
       width: 100%;
+      max-width: 100%;
+      min-width: 0;
+      box-sizing: border-box;
     }
 
     .visualization-opt-in-bar {
@@ -306,6 +317,10 @@ export function cleanDisplayContent(content: string, hasVisual: boolean = false)
       color: var(--foreground);
       font-size: 0.92rem;
       line-height: 1.6;
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+      box-sizing: border-box;
 
       p {
         margin: 0 0 10px 0;
@@ -454,10 +469,11 @@ export function cleanDisplayContent(content: string, hasVisual: boolean = false)
       }
 
       /* Raw markdown table styling fallback */
+      .markdown-table-wrapper table,
       table {
         width: 100%;
         border-collapse: collapse;
-        margin: 12px 0;
+        margin: 0;
         font-size: 0.84rem;
         border: 1px solid var(--border-color);
         border-radius: var(--radius-card);
